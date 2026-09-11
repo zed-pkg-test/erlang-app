@@ -1,0 +1,101 @@
+name: ORES middleware Erlang/Cowboy stress
+
+on:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 8 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ores-middleware-erlang-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ORES_MIDDLEWARE_SHA: d588e7bf890c337500641ed06d0b90f7b7a57748
+
+jobs:
+  erlang:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/ores-middleware
+          ref: ${{ env.ORES_MIDDLEWARE_SHA }}
+          path: middleware
+          persist-credentials: false
+          fetch-depth: 1
+
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
+        with:
+          otp-version: "27.3.4.14"
+          rebar3-version: "3.24.0"
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+
+      - name: Prove immutable upstream source
+        run: |
+          set -euo pipefail
+          test "$(git -C middleware rev-parse HEAD)" = "$ORES_MIDDLEWARE_SHA"
+          test -z "$(git -C middleware status --porcelain)"
+
+      - name: Compile and repeat Erlang/Cowboy EUnit suite
+        run: |
+          set -euo pipefail
+          cd middleware/src/erlang
+          rebar3 compile
+          for iteration in 1 2 3 4 5; do
+            echo "Erlang middleware iteration $iteration"
+            rebar3 eunit
+          done
+
+      - name: Validate Erlang runtime descriptor
+        run: |
+          set -euo pipefail
+          cd middleware/src/erlang
+          escript escript/contractcheck.escript | jq -e '
+            .contractVersion == "1.0.0" and
+            .language == "erlang" and
+            (.frameworkAdapters | index("cowboy")) != null and
+            (.capabilities | index("request-context")) != null and
+            (.capabilities | index("deadline-timeout")) != null and
+            (.capabilities | index("auth")) != null
+          '
+
+      - name: Run randomized adversarial Erlang suite
+        run: |
+          set -euo pipefail
+          cd middleware
+          cargo run --quiet \
+            --manifest-path tools/middleware-adversarial-runner/Cargo.toml \
+            --package middleware-adversarial-runner \
+            -- \
+            --language erlang \
+            --iterations 10 \
+            --output-dir target/test-org/erlang/logs \
+            --receipt target/test-org/erlang/receipt.json
+          jq -e '.passed == true and (.runs | length) == 10 and all(.runs[]; .passed == true and .exit_code == 0)' target/test-org/erlang/receipt.json
+
+      - name: Prove tracked source stayed immutable
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          test -z "$(git -C middleware diff --name-only)"
+
+      - name: Retain Erlang evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: zed-test-erlang-middleware-${{ github.run_id }}
+          path: middleware/target/test-org/erlang
+          if-no-files-found: error
+          retention-days: 30
