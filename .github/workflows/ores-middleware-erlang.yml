@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ORES_MIDDLEWARE_SHA: d588e7bf890c337500641ed06d0b90f7b7a57748
+  ORES_MIDDLEWARE_SHA: 0af7428730c2c3d5fd27f7796bdb163236886d12
 
 jobs:
   erlang:
@@ -89,7 +89,12 @@ jobs:
         if: ${{ always() }}
         run: |
           set -euo pipefail
-          test -z "$(git -C middleware diff --name-only)"
+          changed="$(git -C middleware diff --name-only)"
+          if [ -n "$changed" ]; then
+            printf 'tracked source changed during certification:\n%s\n' "$changed" >&2
+            git -C middleware diff --stat >&2
+            exit 1
+          fi
 
       - name: Retain Erlang evidence
         if: ${{ always() }}
