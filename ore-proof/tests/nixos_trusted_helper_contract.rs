@@ -1,3 +1,5 @@
+//! Contract tests for trusted NixOS helper resolution without regressing the single Bubblewrap boundary.
+
 const PLATFORM: &str = include_str!("../src/platform/mod.rs");
 const LINUX: &str = include_str!("../src/platform/linux.rs");
 const HELPER: &str = include_str!("../scripts/linux/ores-proc-isolate.sh");
