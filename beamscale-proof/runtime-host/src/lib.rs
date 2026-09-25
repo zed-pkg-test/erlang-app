@@ -885,7 +885,12 @@ impl RuntimeHost {
             .api_socket
             .clone()
             .unwrap_or_else(|| jailed.api_socket.clone());
-        fs::create_dir_all(jailed.root.join("snapshot")).await?;
+        prepare_jailer_writable_dir(
+            &jailed.root.join("snapshot"),
+            self.config.jailer_uid,
+            self.config.jailer_gid,
+        )
+        .await?;
         let client = FcClient::new(api);
         client.patch("/vm", json!({"state": "Paused"})).await?;
         client
@@ -1411,9 +1416,43 @@ async fn stage_guest_restore_files(
     jailed: &JailedRuntime,
 ) -> Result<(), HostError> {
     stage_guest_boot_files(config, jailed).await?;
-    fs::create_dir_all(jailed.root.join("snapshot")).await?;
+    prepare_jailer_writable_dir(
+        &jailed.root.join("snapshot"),
+        config.jailer_uid,
+        config.jailer_gid,
+    )
+    .await?;
     copy_file_readonly(&runtime_paths.snapshot_state, &jailed.snapshot_state).await?;
     copy_file_readonly(&runtime_paths.snapshot_mem, &jailed.snapshot_mem).await?;
+    Ok(())
+}
+
+async fn prepare_jailer_writable_dir(
+    path: &Path,
+    uid: u32,
+    gid: u32,
+) -> Result<(), HostError> {
+    use std::{
+        ffi::CString,
+        os::unix::{ffi::OsStrExt, fs::PermissionsExt},
+    };
+
+    fs::create_dir_all(path).await?;
+    fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).await?;
+    let raw = CString::new(path.as_os_str().as_bytes()).map_err(|_| {
+        HostError::Firecracker(format!(
+            "jailer writable path contains an interior NUL: {}",
+            path.display()
+        ))
+    })?;
+    let result = unsafe { libc::chown(raw.as_ptr(), uid, gid) };
+    if result != 0 {
+        return Err(HostError::Firecracker(format!(
+            "chown {} to {uid}:{gid}: {}",
+            path.display(),
+            std::io::Error::last_os_error()
+        )));
+    }
     Ok(())
 }
 
