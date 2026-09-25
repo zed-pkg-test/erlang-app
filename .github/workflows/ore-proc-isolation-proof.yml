@@ -1,0 +1,242 @@
+name: ore-proc-isolation-proof
+
+on:
+  pull_request:
+    paths:
+      - ore-proof/**
+      - .github/workflows/ore-proc-isolation-proof.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-source:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: ore-proof
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+      - name: Verify exact candidate source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '7361ddbb527eb34dba1b6fdc1266fe3466e55f73' SOURCE_PROOF.md
+          grep -q 'a129944af6c00b9d2ae35e7adfc3b389258a45fc' SOURCE_PROOF.md
+          grep -q '9261acc26e1285e75d005355b06bab4e478e6ae1' SOURCE_PROOF.md
+          test "$(git hash-object scripts/linux/ores-proc-isolate.sh)" = '55840e9672969d7847e44a57bdb4c800c8454031'
+          test "$(git hash-object tests/linux_helper_tripwire_contract.rs)" = 'c03c77ccf51e653472609de22e1e178ac30e2bba'
+          test "$(git hash-object tests/nixos_trusted_helper_contract.rs)" = '755e9eef0ec9d692dbcb9dc53abd38aed0f5a2b2'
+          test "$(git hash-object src/platform/mod.rs)" = '767ec7e24722729cbbba3bb8f21d2528090668bd'
+          test "$(git hash-object src/platform/linux.rs)" = '9e0bff1e2c90353e8321fde4df9abe48aefb6b51'
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Unit and contract tests
+        run: cargo test --all-targets
+      - name: Shell syntax
+        shell: bash
+        run: |
+          bash -n scripts/linux/ores-proc-isolate.sh
+          bash -n scripts/macos/ores-proc-isolate.sh
+
+  linux-honeypot-launch:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: ore-proof
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+      - name: Install sandbox helpers
+        shell: bash
+        env:
+          NEEDRESTART_MODE: a
+        run: |
+          set -euo pipefail
+          sudo -E apt-get update
+          sudo -E apt-get install -y apparmor-profiles apparmor-utils bubblewrap
+          if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || printf '0')" == '1' ]]; then
+            profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+            test -f "$profile"
+            sudo install -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          fi
+      - name: Build exact candidate source snapshot
+        run: cargo build --quiet --bins
+      - name: Materialize trusted tripwire boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo install -d -o root -g root -m 0755 /opt/beamscale/honeypot-bin
+          sudo install -d -o root -g root -m 0755 /run/bmscl-honeypot
+          sudo rm -f /run/bmscl-honeypot/tripwire.sock
+          sudo python3 - <<'PY' >/tmp/bmscl-proof-socket.log 2>&1 &
+          import socket, time
+          path = "/run/bmscl-honeypot/tripwire.sock"
+          sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+          sock.bind(path)
+          sock.listen(1)
+          time.sleep(120)
+          PY
+          echo $! >/tmp/bmscl-proof-socket.pid
+          for _ in {1..50}; do
+            [[ -S /run/bmscl-honeypot/tripwire.sock ]] && break
+            sleep 0.1
+          done
+          [[ -S /run/bmscl-honeypot/tripwire.sock ]]
+          sudo chown root:root /run/bmscl-honeypot/tripwire.sock
+          cat >/tmp/bmscl-proof.yaml <<'YAML'
+          version: 1
+          defaults:
+            group: strict
+          groups:
+            strict:
+              filesystem:
+                read_only: []
+              network:
+                mode: none
+              environment: {}
+          processes:
+            true:
+              group: strict
+              command: [/usr/bin/true]
+          YAML
+      - name: Trusted boundary launches
+        run: target/debug/ores-proc-isolation run true --beamscale-honeypot --config /tmp/bmscl-proof.yaml
+      - name: Writable tripwire directory fails closed before sandbox launch
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo chmod 0777 /opt/beamscale/honeypot-bin
+          set +e
+          output=$(target/debug/ores-proc-isolation run true --beamscale-honeypot --config /tmp/bmscl-proof.yaml 2>&1)
+          rc=$?
+          set -e
+          test "$rc" -ne 0
+          grep -q 'root-owned, non-writable real directory' <<<"$output"
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f /tmp/bmscl-proof-socket.pid ]]; then
+            sudo kill "$(cat /tmp/bmscl-proof-socket.pid)" 2>/dev/null || true
+          fi
+          sudo rm -rf /opt/beamscale/honeypot-bin /run/bmscl-honeypot
+
+  linux-external-boundary:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: ore-proof
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+      - name: Install network sandbox helpers
+        shell: bash
+        env:
+          NEEDRESTART_MODE: a
+        run: |
+          set -euo pipefail
+          sudo -E apt-get update
+          sudo -E apt-get install -y apparmor-profiles apparmor-utils bubblewrap slirp4netns iproute2 iptables curl
+          if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || printf '0')" == '1' ]]; then
+            profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+            test -f "$profile"
+            sudo install -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          fi
+      - name: Build exact candidate with boundary fixture
+        run: cargo build --quiet --bins --examples
+      - name: Write strict external policy
+        shell: bash
+        run: |
+          cat >/tmp/ores-pi-external-proof.yaml <<'YAML'
+          version: 1
+          defaults:
+            group: no-net
+          groups:
+            no-net:
+              network:
+                mode: none
+            external:
+              network:
+                mode: external
+                deny_loopback: true
+                deny_private_networks: true
+          processes:
+            true:
+              group: no-net
+              command: [/usr/bin/true]
+            passwd:
+              group: no-net
+              command: [/usr/bin/cat, /etc/passwd]
+            internet:
+              group: external
+              command: [/usr/bin/curl, --fail, --silent, --show-error, --head, https://example.com]
+            curl-flex:
+              group: external
+              command: [/usr/bin/curl, --fail, --silent, --show-error]
+          YAML
+      - name: No-network launch works and host filesystem stays hidden
+        shell: bash
+        run: |
+          set -euo pipefail
+          target/debug/ores-proc-isolation run true --config /tmp/ores-pi-external-proof.yaml
+          if target/debug/ores-proc-isolation run passwd --config /tmp/ores-pi-external-proof.yaml; then
+            echo 'sandbox unexpectedly read /etc/passwd' >&2
+            exit 1
+          fi
+      - name: Public Internet egress succeeds
+        run: target/debug/ores-proc-isolation run internet --config /tmp/ores-pi-external-proof.yaml
+      - name: Host loopback and host interface stay unreachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          loop_server=''
+          host_server=''
+          cleanup() {
+            [[ -z "$loop_server" ]] || kill "$loop_server" 2>/dev/null || true
+            [[ -z "$host_server" ]] || kill "$host_server" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          target/debug/examples/loopback_fixture 127.0.0.1:18080 >/tmp/loopback.log 2>&1 &
+          loop_server=$!
+          sleep 1
+          curl --fail --silent http://127.0.0.1:18080 >/dev/null
+          if target/debug/ores-proc-isolation run curl-flex --config /tmp/ores-pi-external-proof.yaml -- http://127.0.0.1:18080; then
+            echo 'sandbox unexpectedly reached host loopback' >&2
+            exit 1
+          fi
+
+          host_ip=$(ip -o -4 addr show scope global | awk 'NR == 1 { split($4, a, "/"); print a[1] }')
+          test -n "$host_ip"
+          target/debug/examples/loopback_fixture 0.0.0.0:18081 >/tmp/host-interface.log 2>&1 &
+          host_server=$!
+          sleep 1
+          curl --fail --silent "http://${host_ip}:18081" >/dev/null
+          if target/debug/ores-proc-isolation run curl-flex --config /tmp/ores-pi-external-proof.yaml -- "http://${host_ip}:18081"; then
+            echo "sandbox unexpectedly reached host interface ${host_ip}" >&2
+            exit 1
+          fi
