@@ -46,18 +46,24 @@ validate(undefined, request, http, _Target) ->
     {ok, #{}};
 validate(undefined, Class, _Protocol, _Target) ->
     {error, {experimental_profile_required, Class}};
-validate(phoenix_v1, request, http, _Target) ->
-    {ok, #{execution_class => request,
-           experimental_profile => phoenix_v1,
-           protocol => http}};
+validate(phoenix_v1, request, http, Target) ->
+    firecracker_profile(
+      phoenix_v1,
+      Target,
+      #{execution_class => request,
+        experimental_profile => phoenix_v1,
+        protocol => http});
 validate(phoenix_v1, connection, websocket, Target) ->
     case positive_int(value(drain_timeout_ms, Target, ?DEFAULT_DRAIN_TIMEOUT_MS),
                       1000, 300000) of
         {ok, DrainTimeoutMs} ->
-            {ok, #{execution_class => connection,
-                   experimental_profile => phoenix_v1,
-                   protocol => websocket,
-                   drain_timeout_ms => DrainTimeoutMs}};
+            firecracker_profile(
+              phoenix_v1,
+              Target,
+              #{execution_class => connection,
+                experimental_profile => phoenix_v1,
+                protocol => websocket,
+                drain_timeout_ms => DrainTimeoutMs});
         error ->
             {error, invalid_drain_timeout_ms}
     end;
@@ -73,12 +79,15 @@ validate(durable_actor_v1, durable_actor, http, Target) ->
         {{ok, Namespace}, {ok, VirtualShards}, {ok, ShardsPerActor}}
           when ShardsPerActor =< VirtualShards,
                VirtualShards rem ShardsPerActor =:= 0 ->
-            {ok, #{execution_class => durable_actor,
-                   experimental_profile => durable_actor_v1,
-                   protocol => http,
-                   namespace => Namespace,
-                   virtual_shards => VirtualShards,
-                   shards_per_actor => ShardsPerActor}};
+            firecracker_profile(
+              durable_actor_v1,
+              Target,
+              #{execution_class => durable_actor,
+                experimental_profile => durable_actor_v1,
+                protocol => http,
+                namespace => Namespace,
+                virtual_shards => VirtualShards,
+                shards_per_actor => ShardsPerActor});
         {error, _, _} -> {error, invalid_durable_namespace};
         {_, error, _} -> {error, invalid_virtual_shards};
         {_, _, error} -> {error, invalid_shards_per_actor};
@@ -110,7 +119,21 @@ enum_atom(<<"phoenix_v1">>) -> {ok, phoenix_v1};
 enum_atom(<<"durable_actor_v1">>) -> {ok, durable_actor_v1};
 enum_atom(<<"http">>) -> {ok, http};
 enum_atom(<<"websocket">>) -> {ok, websocket};
+enum_atom(<<"bare_process">>) -> {ok, bare_process};
+enum_atom(<<"firecracker">>) -> {ok, firecracker};
 enum_atom(_) -> error.
+
+firecracker_profile(Profile, Target, Fields) ->
+    case enum(isolation_class, value(isolation_class, Target, firecracker),
+              [bare_process, firecracker]) of
+        {ok, firecracker} ->
+            {ok, Fields#{isolation_class => firecracker}};
+        {ok, IsolationClass} ->
+            {error, {experimental_profile_requires_firecracker,
+                     Profile, IsolationClass}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 profile_enabled(_Profile, all) -> true;
 profile_enabled(Profile, Enabled) when is_list(Enabled) ->
