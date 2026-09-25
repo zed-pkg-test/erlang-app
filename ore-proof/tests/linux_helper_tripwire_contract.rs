@@ -72,14 +72,15 @@ fn one_bubblewrap_setup_owns_all_tenant_namespaces() {
 }
 
 #[test]
-fn host_network_supervisor_binds_exact_user_and_network_namespace_paths() {
-    assert!(HELPER.contains("USERNS_PATH=\"/proc/$child_pid/ns/user\""));
+fn host_network_supervisor_enters_network_owner_user_namespace() {
     assert!(HELPER.contains("NETNS_PATH=\"/proc/$child_pid/ns/net\""));
     assert!(HELPER.contains("--netns-type=path"));
-    assert!(HELPER.contains("--userns-path=\"$USERNS_PATH\""));
     assert!(HELPER.contains("\"$NETNS_PATH\" tap0"));
+    assert!(!HELPER.contains("--userns-path="));
     assert!(!HELPER.contains("--enable-sandbox"));
-    assert!(HELPER.contains("-U --preserve-credentials -n --"));
+    assert!(HELPER.contains("-U --user-parent --keep-caps --"));
+    assert!(HELPER.contains("-U --user-parent --keep-caps -n --"));
+    assert!(!HELPER.contains("-U --preserve-credentials -n --"));
     assert!(!HELPER.contains("\"$NSENTER\" -t \"$child_pid\" -n \"$IP\""));
 }
 
