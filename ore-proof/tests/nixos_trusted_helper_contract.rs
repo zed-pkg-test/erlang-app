@@ -33,10 +33,13 @@ fn bash_is_resolved_through_the_same_trusted_lookup() {
 fn single_bubblewrap_boundary_from_main_is_preserved() {
     assert!(!HELPER.contains("ORES_PI_SUPERVISOR_USERNS"));
     assert!(HELPER.contains("--unshare-user"));
-    assert!(HELPER.contains("--disable-userns"));
     assert!(HELPER.contains("--cap-drop ALL"));
     assert!(HELPER.contains("--netns-type=path"));
     assert!(!HELPER.contains("--userns-path="));
-    assert!(HELPER.contains("-U --user-parent --keep-caps --"));
-    assert!(HELPER.contains("-U --user-parent --keep-caps -n --"));
+    assert!(!HELPER.contains("--user-parent"));
+    assert!(HELPER.contains("--userns-block-fd 6"));
+    assert!(HELPER.contains("--assert-userns-disabled"));
+    assert!(HELPER.contains("/proc/sys/user/max_user_namespaces"));
+    assert!(HELPER.contains("-U --keep-caps --"));
+    assert!(HELPER.contains("-U --keep-caps -n --"));
 }
