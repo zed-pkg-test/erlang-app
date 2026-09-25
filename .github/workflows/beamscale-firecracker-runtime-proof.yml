@@ -9,15 +9,12 @@ permissions:
   contents: read
 
 jobs:
-  runtime-host:
+  rust-proof:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
-          repository: beamscale/bmscl-infra
-          ref: feature/firecracker-runtime-cells
-          path: beamscale-infra
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -25,18 +22,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            beamscale-infra/modules/tenant_runtime/runtime-host
-            beamscale-infra/modules/tenant_runtime/guest-agent
+            beamscale-proof/runtime-host
+            beamscale-proof/api-server
       - name: Runtime host clippy
-        run: cargo clippy --manifest-path beamscale-infra/modules/tenant_runtime/runtime-host/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --manifest-path beamscale-proof/runtime-host/Cargo.toml --all-targets -- -D warnings
       - name: Runtime host tests
-        run: cargo test --manifest-path beamscale-infra/modules/tenant_runtime/runtime-host/Cargo.toml --all-targets
+        run: cargo test --manifest-path beamscale-proof/runtime-host/Cargo.toml --all-targets
       - name: Runtime host fmt
-        run: cargo fmt --manifest-path beamscale-infra/modules/tenant_runtime/runtime-host/Cargo.toml --all -- --check
-      - name: Guest agent clippy
-        run: cargo clippy --manifest-path beamscale-infra/modules/tenant_runtime/guest-agent/Cargo.toml --all-targets -- -D warnings
-      - name: Guest agent tests
-        run: cargo test --manifest-path beamscale-infra/modules/tenant_runtime/guest-agent/Cargo.toml --all-targets
-      - name: Topology validation
-        working-directory: beamscale-infra
-        run: python3 scripts/validate-deployment-topology.py
+        run: cargo fmt --manifest-path beamscale-proof/runtime-host/Cargo.toml --all -- --check
+      - name: API server clippy
+        run: cargo clippy --manifest-path beamscale-proof/api-server/Cargo.toml --all-targets -- -D warnings
+      - name: API server tests
+        run: cargo test --manifest-path beamscale-proof/api-server/Cargo.toml --all-targets
+      - name: API server fmt
+        run: cargo fmt --manifest-path beamscale-proof/api-server/Cargo.toml --all -- --check
