@@ -11,7 +11,8 @@ phoenix_request_is_still_faas_request_test() ->
     ?assertEqual(
        {ok, #{execution_class => request,
               experimental_profile => phoenix_v1,
-              protocol => http}},
+              protocol => http,
+              isolation_class => firecracker}},
        bmscl_faas_profile:normalize(#{
            <<"experimental_profile">> => <<"phoenix_v1">>,
            <<"execution_class">> => <<"request">>,
@@ -25,6 +26,7 @@ phoenix_connection_profile_test() ->
         protocol => websocket
     }),
     ?assertEqual(connection, maps:get(execution_class, Profile)),
+    ?assertEqual(firecracker, maps:get(isolation_class, Profile)),
     ?assertEqual(30000, maps:get(drain_timeout_ms, Profile)).
 
 connection_requires_experimental_profile_test() ->
@@ -42,7 +44,28 @@ durable_actor_layout_is_normalized_test() ->
         namespace => <<"rooms">>
     }),
     ?assertEqual(4096, maps:get(virtual_shards, Profile)),
-    ?assertEqual(64, maps:get(shards_per_actor, Profile)).
+    ?assertEqual(64, maps:get(shards_per_actor, Profile)),
+    ?assertEqual(firecracker, maps:get(isolation_class, Profile)).
+
+experimental_profiles_require_firecracker_test() ->
+    ?assertEqual(
+       {error, {experimental_profile_requires_firecracker,
+                phoenix_v1, bare_process}},
+       bmscl_faas_profile:normalize(#{
+           execution_class => request,
+           experimental_profile => phoenix_v1,
+           protocol => http,
+           isolation_class => bare_process
+       })),
+    ?assertEqual(
+       {error, {experimental_profile_requires_firecracker,
+                durable_actor_v1, bare_process}},
+       bmscl_faas_profile:normalize(#{
+           execution_class => durable_actor,
+           experimental_profile => durable_actor_v1,
+           namespace => <<"rooms">>,
+           isolation_class => <<"bare_process">>
+       })).
 
 experimental_profile_gate_test() ->
     Previous = application:get_env(bmscl_supervisor, experimental_faas_profiles),
