@@ -1,0 +1,158 @@
+name: ore-proc-isolation-proof
+
+on:
+  push:
+    branches:
+      - ore-proc-isolation-proof-20260924
+    paths:
+      - ore-proof/**
+      - .github/workflows/ore-proc-isolation-proof.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-source:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: ore-proof
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+      - name: Verify exact candidate source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'd4dad9eec6900bf1873ce42650d9b24395e879ec' SOURCE_PROOF.md
+          grep -q '6cb09d8ce9773b3389fd8af3dd57576f08b9cfb1' SOURCE_PROOF.md
+          grep -q '99faa05ef8f1184ee0d4931f589a2c510280305a' SOURCE_PROOF.md
+          grep -q '3370ce2dc71646745f95ee74d4c2c0769d4b4dcc' SOURCE_PROOF.md
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Unit and contract tests
+        run: cargo test --all-targets
+      - name: Shell syntax
+        shell: bash
+        run: |
+          bash -n scripts/linux/ores-proc-isolate.sh
+          bash -n scripts/macos/ores-proc-isolate.sh
+
+  linux-honeypot-launch:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: ore-proof
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+      - name: Install sandbox helpers
+        shell: bash
+        env:
+          NEEDRESTART_MODE: a
+        run: |
+          set -euo pipefail
+          sudo -E apt-get update
+          sudo -E apt-get install -y apparmor-profiles apparmor-utils bubblewrap
+          if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || printf '0')" == '1' ]]; then
+            profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+            test -f "$profile"
+            sudo install -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          fi
+      - name: Build exact candidate source snapshot
+        run: cargo build --quiet --bins
+      - name: Materialize trusted tripwire boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo install -d -o root -g root -m 0755 /opt/beamscale/honeypot-bin
+          sudo install -d -o root -g root -m 0755 /run/bmscl-honeypot
+          sudo rm -f /run/bmscl-honeypot/tripwire.sock
+          sudo python3 - <<'PY' >/tmp/bmscl-proof-socket.log 2>&1 &
+          import socket, time
+          path = "/run/bmscl-honeypot/tripwire.sock"
+          sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+          sock.bind(path)
+          sock.listen(1)
+          time.sleep(120)
+          PY
+          echo $! >/tmp/bmscl-proof-socket.pid
+          for _ in {1..50}; do
+            [[ -S /run/bmscl-honeypot/tripwire.sock ]] && break
+            sleep 0.1
+          done
+          [[ -S /run/bmscl-honeypot/tripwire.sock ]]
+          sudo chown root:root /run/bmscl-honeypot/tripwire.sock
+          cat >/tmp/bmscl-proof.yaml <<'YAML'
+          version: 1
+          defaults:
+            group: strict
+          groups:
+            strict:
+              filesystem:
+                read_only: []
+              network:
+                mode: none
+              environment: {}
+          processes:
+            true:
+              group: strict
+              command: [/usr/bin/true]
+          YAML
+      - name: Diagnose single Bubblewrap namespace support
+        shell: bash
+        run: |
+          set -u
+          bwrap_path=$(command -v bwrap)
+          for ns in ipc pid net uts cgroup; do
+            echo "=== direct --unshare-user + --unshare-${ns} ==="
+            "$bwrap_path" --die-with-parent --new-session \
+              --unshare-user --uid 0 --gid 0 --disable-userns \
+              "--unshare-${ns}" --cap-drop ALL \
+              --ro-bind / / --dev /dev -- /bin/true
+            echo "rc=$?"
+          done
+          echo "=== direct combined ==="
+          "$bwrap_path" --die-with-parent --new-session \
+            --unshare-user --uid 0 --gid 0 --disable-userns \
+            --unshare-ipc --unshare-pid --unshare-net --unshare-uts --unshare-cgroup \
+            --cap-drop ALL --ro-bind / / --dev /dev -- /bin/true
+          echo "combined_rc=$?"
+      - name: Trusted boundary launches
+        run: target/debug/ores-proc-isolation run true --beamscale-honeypot --config /tmp/bmscl-proof.yaml
+      - name: Writable tripwire directory fails closed before sandbox launch
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo chmod 0777 /opt/beamscale/honeypot-bin
+          set +e
+          output=$(target/debug/ores-proc-isolation run true --beamscale-honeypot --config /tmp/bmscl-proof.yaml 2>&1)
+          rc=$?
+          set -e
+          test "$rc" -ne 0
+          grep -q 'root-owned, non-writable real directory' <<<"$output"
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f /tmp/bmscl-proof-socket.pid ]]; then
+            sudo kill "$(cat /tmp/bmscl-proof-socket.pid)" 2>/dev/null || true
+          fi
+          sudo rm -rf /opt/beamscale/honeypot-bin /run/bmscl-honeypot
