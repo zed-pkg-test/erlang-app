@@ -501,7 +501,9 @@ fn placement_error(err: PlacementError) -> ApiError {
     let status = match err {
         PlacementError::Rejected(_) => StatusCode::BAD_REQUEST,
         PlacementError::Conflict(_) => StatusCode::CONFLICT,
-        PlacementError::NoHosts(_) | PlacementError::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+        PlacementError::NoHosts(_) | PlacementError::Unavailable(_) => {
+            StatusCode::SERVICE_UNAVAILABLE
+        }
     };
     api_error(status, err.to_string())
 }
@@ -527,11 +529,7 @@ fn default_execution_class() -> ExecutionClass {
 mod tests {
     use super::*;
 
-    fn manifest(
-        language: &str,
-        profile: &str,
-        max_processes: u32,
-    ) -> ArtifactManifest {
+    fn manifest(language: &str, profile: &str, max_processes: u32) -> ArtifactManifest {
         ArtifactManifest {
             format_version: 1,
             runtime: "beam".into(),
@@ -576,11 +574,7 @@ mod tests {
 
     #[test]
     fn durable_actor_keeps_tenant_turn_single_process() {
-        let good = manifest(
-            "gleam",
-            "bmscl-hosted-gleam-durable-actor-v1",
-            1,
-        );
+        let good = manifest("gleam", "bmscl-hosted-gleam-durable-actor-v1", 1);
         assert!(validate_manifest(&good, ExecutionClass::DurableActor).is_ok());
 
         let wrong_profile = manifest("gleam", "bmscl-hosted-gleam-v1", 1);
@@ -589,8 +583,14 @@ mod tests {
 
     #[test]
     fn execution_class_selects_security_backend() {
-        assert_eq!(ExecutionClass::Faas.backend(), ExecutionBackend::BareProcess);
-        assert_eq!(ExecutionClass::Phoenix.backend(), ExecutionBackend::Firecracker);
+        assert_eq!(
+            ExecutionClass::Faas.backend(),
+            ExecutionBackend::BareProcess
+        );
+        assert_eq!(
+            ExecutionClass::Phoenix.backend(),
+            ExecutionBackend::Firecracker
+        );
         assert_eq!(
             ExecutionClass::DurableActor.backend(),
             ExecutionBackend::Firecracker
