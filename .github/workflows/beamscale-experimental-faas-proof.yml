@@ -3,7 +3,7 @@ name: beamscale-experimental-faas-proof
 on:
   push:
     branches:
-      - beamscale-exec-boundary-proof-20260925
+      - beamscale-microvm-contract-proof-20260925
 
 permissions:
   contents: read
@@ -40,6 +40,7 @@ jobs:
                     bmscl_private_dns_namespace_tests,
                     bmscl_execution_boundary_tests,
                     bmscl_execution_policy_tests,
+                    bmscl_microvm_contract_tests,
                     bmscl_experimental_runtime_tests],
                    [verbose]),
             halt(0).'
