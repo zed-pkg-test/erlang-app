@@ -114,6 +114,8 @@ RESOLV_FILE=''
 STATUS_FIFO=''
 GATE_FIFO=''
 READY_FIFO=''
+INFO_FIFO=''
+USERNS_GATE_FIFO=''
 IPC_DIR=''
 SLIRP_PID=''
 BWRAP_PID=''
@@ -139,20 +141,19 @@ if [[ "$BEAMSCALE_HONEYPOT" == '1' ]]; then
   TARGET_PATH=$BEAMSCALE_TRIPWIRE_DIR
 fi
 
-# A single Bubblewrap setup transaction creates the tenant's user namespace and
-# all subordinate namespace boundaries. This is intentional on Ubuntu 24.04:
-# the restrictive bwrap AppArmor profile permits Bubblewrap to perform namespace
-# setup but strips capabilities from the child. A nested second Bubblewrap would
-# therefore be unable to create IPC/PID/NET/UTS/cgroup namespaces. The target is
-# mapped to namespace-root only so Bubblewrap can finish setup; all tenant
-# capabilities are dropped before exec and further user namespaces are disabled.
+# Bubblewrap creates exactly one unprivileged user namespace. For external
+# networking the host supervisor pauses that namespace before initialization,
+# installs a one-ID uid/gid map, disables any further user namespaces inside
+# it, and then lets Bubblewrap finish the remaining namespace setup. This keeps
+# the network namespace owned by the same user namespace that the trusted host
+# supervisor can enter on Ubuntu 24.04, without relying on newer nsenter
+# --user-parent support. The tenant still receives no capabilities.
 BWRAP_ARGS=(
   --die-with-parent
   --new-session
   --unshare-user
   --uid 0
   --gid 0
-  --disable-userns
   --unshare-ipc
   --unshare-pid
   --unshare-net
@@ -218,6 +219,10 @@ if [[ "$BEAMSCALE_HONEYPOT" == '1' ]]; then
 fi
 
 if [[ "$NETWORK" == 'none' ]]; then
+  # Bubblewrap's built-in disable-userns path deliberately creates a nested
+  # user namespace, which is fine when no host-side network supervisor must
+  # enter the owning namespace.
+  BWRAP_ARGS+=(--disable-userns)
   trap - EXIT HUP INT TERM
   exec "$BWRAP" "${BWRAP_ARGS[@]}" -- "$EXE" "${TARGET_ARGS[@]}"
 fi
@@ -227,11 +232,14 @@ need nsenter
 need ip
 need iptables
 need ip6tables
+need id
 SLIRP=$(command -v slirp4netns)
 NSENTER=$(command -v nsenter)
 IP=$(command -v ip)
 IPTABLES=$(command -v iptables)
 IP6TABLES=$(command -v ip6tables)
+HOST_UID=$(id -u)
+HOST_GID=$(id -g)
 
 HOST_IPV4=()
 while IFS=' ' read -r _ _ family cidr _; do
@@ -252,17 +260,53 @@ chmod 0700 "$IPC_DIR"
 STATUS_FIFO="$IPC_DIR/status"
 GATE_FIFO="$IPC_DIR/gate"
 READY_FIFO="$IPC_DIR/ready"
-mkfifo -m 0600 "$STATUS_FIFO" "$GATE_FIFO" "$READY_FIFO"
+INFO_FIFO="$IPC_DIR/info"
+USERNS_GATE_FIFO="$IPC_DIR/userns-gate"
+mkfifo -m 0600 "$STATUS_FIFO" "$GATE_FIFO" "$READY_FIFO" "$INFO_FIFO" "$USERNS_GATE_FIFO"
 exec 8<>"$STATUS_FIFO"
 exec 9<>"$GATE_FIFO"
+exec 10<>"$INFO_FIFO"
+exec 11<>"$USERNS_GATE_FIFO"
 
+# Hold the first user namespace before Bubblewrap initializes it. The host
+# process owns that child namespace, so it can install the exact one-ID map,
+# enter it with ordinary Ubuntu 24.04 nsenter, and set the namespaced userns
+# limit to zero. Bubblewrap then verifies the limit via --assert-userns-disabled.
 "$BWRAP" \
+  --info-fd 5 \
+  --userns-block-fd 6 \
+  --assert-userns-disabled \
   --json-status-fd 3 \
   --block-fd 4 \
   "${BWRAP_ARGS[@]}" \
   -- "$EXE" "${TARGET_ARGS[@]}" \
-  3>&8 4<&9 &
+  3>&8 4<&9 5>&10 6<&11 &
 BWRAP_PID=$!
+
+info_line=''
+if ! IFS= read -r info_line <&10; then
+  wait "$BWRAP_PID" || true
+  fatal 'bubblewrap exited before reporting the user namespace setup PID'
+fi
+setup_pid=$(printf '%s\n' "$info_line" | sed -n 's/.*"child-pid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p')
+[[ -n "$setup_pid" ]] || fatal "unable to parse bubblewrap setup PID from: $info_line"
+[[ -e "/proc/$setup_pid/ns/user" ]] || fatal 'bubblewrap user namespace disappeared before mapping'
+
+if [[ -e "/proc/$setup_pid/setgroups" ]]; then
+  printf 'deny\n' >"/proc/$setup_pid/setgroups" \
+    || fatal 'unable to disable setgroups in sandbox user namespace'
+fi
+printf '0 %s 1\n' "$HOST_UID" >"/proc/$setup_pid/uid_map" \
+  || fatal 'unable to install sandbox uid map'
+printf '0 %s 1\n' "$HOST_GID" >"/proc/$setup_pid/gid_map" \
+  || fatal 'unable to install sandbox gid map'
+
+"$NSENTER" -t "$setup_pid" -U --keep-caps -- "$BASH" -euc \
+  'printf "0\n" > /proc/sys/user/max_user_namespaces' \
+  || fatal 'unable to disable nested user namespaces in sandbox user namespace'
+printf '1' >&11
+exec 10>&-
+exec 11>&-
 
 status_line=''
 if ! IFS= read -r status_line <&8; then
@@ -274,12 +318,10 @@ child_pid=$(printf '%s\n' "$status_line" | sed -n 's/.*"child-pid"[[:space:]]*:[
 NETNS_PATH="/proc/$child_pid/ns/net"
 [[ -e "$NETNS_PATH" ]] || fatal 'sandbox network namespace disappeared before network setup'
 
-# --disable-userns leaves the tenant in a nested user namespace after Bubblewrap
-# creates its network namespace. The network namespace is owned by the parent
-# user namespace, so a host-side helper must enter that parent before setns(net).
-# nsenter grants capabilities only in that descendant parent user namespace;
-# the supervisor never receives capabilities in the host's initial userns.
-"$NSENTER" -t "$child_pid" -U --user-parent --keep-caps -- \
+# The network namespace is owned by the same first-level user namespace as the
+# tenant. Enter that descendant user namespace first, gaining capabilities only
+# there (never in the host initial userns), then let slirp configure the netns.
+"$NSENTER" -t "$child_pid" -U --keep-caps -- \
   "$SLIRP" \
     --configure \
     --mtu=65520 \
@@ -297,12 +339,11 @@ if ! IFS= read -r -n 1 ready <"$READY_FIFO"; then
 fi
 [[ "$ready" == '1' ]] || fatal 'slirp4netns did not acknowledge network readiness'
 
-# Enter the user namespace that owns the target network namespace, then enter
-# the network namespace. Namespace-root here is scoped to Bubblewrap's parent
-# userns and is not host root. The tenant remains in the nested --disable-userns
-# namespace with all capabilities dropped.
+# Enter the sandbox user namespace before the network namespace. Namespace-root
+# is scoped to this descendant userns and is not host root. The tenant executes
+# with the full capability set dropped and cannot create another user namespace.
 ns_net() {
-  "$NSENTER" -t "$child_pid" -U --user-parent --keep-caps -n -- "$@"
+  "$NSENTER" -t "$child_pid" -U --keep-caps -n -- "$@"
 }
 
 ns_net "$IP" link set lo down \
