@@ -736,7 +736,7 @@ impl RuntimeHost {
                     "/boot-source",
                     json!({
                         "kernel_image_path": self.config.kernel_image.display().to_string(),
-                        "boot_args": self.config.boot_args.clone()
+                        "boot_args": guest_boot_args(&self.config, record)
                     }),
                 )
                 .await?;
@@ -1053,6 +1053,16 @@ impl RuntimePaths {
             dir,
         }
     }
+}
+
+fn guest_boot_args(config: &HostConfig, record: &ShardRecord) -> String {
+    format!(
+        "{} bmscl.execution_class={} bmscl.execution_backend=firecracker bmscl.tenant_id={} bmscl.runtime_epoch={}",
+        config.boot_args,
+        execution_class_name(record.key.execution_class),
+        record.key.tenant_id,
+        record.runtime_epoch
+    )
 }
 
 fn execution_class_name(execution_class: ExecutionClass) -> &'static str {
@@ -1416,6 +1426,28 @@ mod tests {
             validate_execution_request(ExecutionClass::Faas, ExecutionBackend::Firecracker)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn guest_boot_args_bind_class_tenant_backend_and_epoch() {
+        let request = ensure(9);
+        let record = ShardRecord::new(
+            ShardKey {
+                execution_class: request.execution_class,
+                tenant_id: request.tenant_id,
+                shard_id: request.shard_id,
+            },
+            request.runtime_epoch,
+            request.deployment_digest,
+            request.user_id,
+            request.root_deployment_id,
+            request.policy,
+        );
+        let args = guest_boot_args(&config(), &record);
+        assert!(args.contains("bmscl.execution_class=phoenix"));
+        assert!(args.contains("bmscl.execution_backend=firecracker"));
+        assert!(args.contains("bmscl.tenant_id=t1"));
+        assert!(args.contains("bmscl.runtime_epoch=9"));
     }
 
     #[test]
