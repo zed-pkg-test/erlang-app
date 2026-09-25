@@ -297,7 +297,11 @@ async fn activate(
 
     let envelope = json!({
         "op": "activate_artifact",
-        "deployment_id": &deployment_id
+        "deployment_id": &deployment_id,
+        "execution_class": req.execution_class,
+        "execution_backend": req.execution_backend,
+        "tenant_id": &req.tenant_id,
+        "runtime_epoch": req.runtime_epoch
     });
     let request_bytes = serde_json::to_vec(&envelope)
         .map_err(|err| api_error(StatusCode::BAD_REQUEST, err.to_string()))?;
@@ -349,6 +353,7 @@ async fn activate(
         put_artifact_over_vsock(
             FsPath::new(vsock_path),
             state.guest_vsock_port,
+            &shard,
             artifact,
             req.timeout_ms,
             state.guest_max_frame_bytes,
@@ -592,6 +597,8 @@ fn guest_invocation_envelope(req: &InvokeRequest, deployment_id: &str) -> Value 
         "deployment_id": deployment_id,
         "execution_class": req.execution_class,
         "execution_backend": req.execution_backend,
+        "tenant_id": &req.tenant_id,
+        "runtime_epoch": req.runtime_epoch,
         "request": &req.request,
         "context": &req.context,
         "capability_refs": &req.capability_refs,
@@ -655,6 +662,7 @@ fn validate_put_artifact_response(bytes: &[u8], artifact: &AdmittedArtifact) -> 
 async fn put_artifact_over_vsock(
     vsock_path: &FsPath,
     guest_port: u32,
+    shard: &ShardStatus,
     artifact: &AdmittedArtifact,
     timeout_ms: u64,
     max_frame_bytes: usize,
@@ -668,6 +676,10 @@ async fn put_artifact_over_vsock(
     }
     let header = serde_json::to_vec(&json!({
         "op": "put_artifact",
+        "execution_class": shard.execution_class,
+        "execution_backend": shard.execution_backend,
+        "tenant_id": &shard.tenant_id,
+        "runtime_epoch": shard.runtime_epoch,
         "build_sha256": artifact.build_sha256,
         "archive_sha256": artifact.archive_sha256,
         "archive_name": artifact.archive_name,
