@@ -2,7 +2,7 @@ mod artifact_store;
 mod runtime_auth;
 
 use artifact_store::{AdmittedArtifact, ArtifactStore};
-use runtime_auth::{RuntimeContract, SignedRequest};
+use runtime_auth::{ExpectedRuntimeRequest, RuntimeContract, SignedRequest};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -99,6 +99,46 @@ struct ActivateRequest {
     #[serde(default = "default_activation_timeout_ms")]
     timeout_ms: u64,
 }
+
+trait RuntimeRequestIdentity {
+    fn tenant_id(&self) -> &str;
+    fn shard_id(&self) -> &str;
+    fn execution_class(&self) -> ExecutionClass;
+    fn execution_backend(&self) -> ExecutionBackend;
+    fn runtime_epoch(&self) -> u64;
+}
+
+macro_rules! impl_runtime_request_identity {
+    ($type:ty) => {
+        impl RuntimeRequestIdentity for $type {
+            fn tenant_id(&self) -> &str {
+                &self.tenant_id
+            }
+
+            fn shard_id(&self) -> &str {
+                &self.shard_id
+            }
+
+            fn execution_class(&self) -> ExecutionClass {
+                self.execution_class
+            }
+
+            fn execution_backend(&self) -> ExecutionBackend {
+                self.execution_backend
+            }
+
+            fn runtime_epoch(&self) -> u64 {
+                self.runtime_epoch
+            }
+        }
+    };
+}
+
+impl_runtime_request_identity!(EnsureShardRequest);
+impl_runtime_request_identity!(EpochRequest);
+impl_runtime_request_identity!(TouchRequest);
+impl_runtime_request_identity!(ActivateRequest);
+impl_runtime_request_identity!(InvokeRequest);
 
 #[derive(Debug, Serialize)]
 struct ActivationStatus {
@@ -208,18 +248,7 @@ async fn ensure(
     Json(signed): Json<SignedRequest<EnsureShardRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
     let SignedRequest { contract, request: req } = signed;
-    authorize_runtime_request(
-        &state,
-        "ensure",
-        &req.tenant_id,
-        &req.shard_id,
-        req.execution_class,
-        req.execution_backend,
-        req.runtime_epoch,
-        &req,
-        &contract,
-    )
-    .await?;
+    authorize_runtime_request(&state, "ensure", &req, &contract).await?;
     validate_shard_identity(&req.tenant_id, &req.shard_id)?;
     let requested_digest = normalize_build_digest(&req.deployment_digest)
         .map_err(|message| api_error(StatusCode::BAD_REQUEST, message))?;
@@ -273,18 +302,7 @@ async fn start(
     Json(signed): Json<SignedRequest<EpochRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
     let SignedRequest { contract, request: req } = signed;
-    authorize_runtime_request(
-        &state,
-        "start",
-        &req.tenant_id,
-        &req.shard_id,
-        req.execution_class,
-        req.execution_backend,
-        req.runtime_epoch,
-        &req,
-        &contract,
-    )
-    .await?;
+    authorize_runtime_request(&state, "start", &req, &contract).await?;
     validate_shard_identity(&req.tenant_id, &req.shard_id)?;
     let _barrier = state.lifecycle_barrier.read().await;
     let gate_index = shard_gate_index(req.execution_class, &req.tenant_id, &req.shard_id);
@@ -297,18 +315,7 @@ async fn activate(
     Json(signed): Json<SignedRequest<ActivateRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
     let SignedRequest { contract, request: req } = signed;
-    authorize_runtime_request(
-        &state,
-        "activate",
-        &req.tenant_id,
-        &req.shard_id,
-        req.execution_class,
-        req.execution_backend,
-        req.runtime_epoch,
-        &req,
-        &contract,
-    )
-    .await?;
+    authorize_runtime_request(&state, "activate", &req, &contract).await?;
     validate_shard_identity(&req.tenant_id, &req.shard_id)?;
     validate_firecracker_target(req.execution_class, req.execution_backend)?;
     if req.timeout_ms == 0 || req.timeout_ms > MAX_ACTIVATION_TIMEOUT_MS {
@@ -445,18 +452,7 @@ async fn touch(
     Json(signed): Json<SignedRequest<TouchRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
     let SignedRequest { contract, request: req } = signed;
-    authorize_runtime_request(
-        &state,
-        "touch",
-        &req.tenant_id,
-        &req.shard_id,
-        req.execution_class,
-        req.execution_backend,
-        req.runtime_epoch,
-        &req,
-        &contract,
-    )
-    .await?;
+    authorize_runtime_request(&state, "touch", &req, &contract).await?;
     validate_shard_identity(&req.tenant_id, &req.shard_id)?;
     if !(-1..=1).contains(&req.active_delta) {
         return Err(api_error(
@@ -475,18 +471,7 @@ async fn invoke(
     Json(signed): Json<SignedRequest<InvokeRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
     let SignedRequest { contract, request: req } = signed;
-    authorize_runtime_request(
-        &state,
-        "invoke",
-        &req.tenant_id,
-        &req.shard_id,
-        req.execution_class,
-        req.execution_backend,
-        req.runtime_epoch,
-        &req,
-        &contract,
-    )
-    .await?;
+    authorize_runtime_request(&state, "invoke", &req, &contract).await?;
     validate_shard_identity(&req.tenant_id, &req.shard_id)?;
     validate_firecracker_target(req.execution_class, req.execution_backend)?;
     if req.invocation_id.is_empty() || req.invocation_id.len() > 128 {
@@ -857,18 +842,7 @@ async fn warm_idle(
     Json(signed): Json<SignedRequest<EpochRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
     let SignedRequest { contract, request: req } = signed;
-    authorize_runtime_request(
-        &state,
-        "warm_idle",
-        &req.tenant_id,
-        &req.shard_id,
-        req.execution_class,
-        req.execution_backend,
-        req.runtime_epoch,
-        &req,
-        &contract,
-    )
-    .await?;
+    authorize_runtime_request(&state, "warm_idle", &req, &contract).await?;
     validate_shard_identity(&req.tenant_id, &req.shard_id)?;
     let _barrier = state.lifecycle_barrier.read().await;
     let gate_index = shard_gate_index(req.execution_class, &req.tenant_id, &req.shard_id);
@@ -886,18 +860,7 @@ async fn hibernate(
     Json(signed): Json<SignedRequest<EpochRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
     let SignedRequest { contract, request: req } = signed;
-    authorize_runtime_request(
-        &state,
-        "hibernate",
-        &req.tenant_id,
-        &req.shard_id,
-        req.execution_class,
-        req.execution_backend,
-        req.runtime_epoch,
-        &req,
-        &contract,
-    )
-    .await?;
+    authorize_runtime_request(&state, "hibernate", &req, &contract).await?;
     validate_shard_identity(&req.tenant_id, &req.shard_id)?;
     let _barrier = state.lifecycle_barrier.read().await;
     let gate_index = shard_gate_index(req.execution_class, &req.tenant_id, &req.shard_id);
@@ -910,18 +873,7 @@ async fn terminate(
     Json(signed): Json<SignedRequest<EpochRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
     let SignedRequest { contract, request: req } = signed;
-    authorize_runtime_request(
-        &state,
-        "terminate",
-        &req.tenant_id,
-        &req.shard_id,
-        req.execution_class,
-        req.execution_backend,
-        req.runtime_epoch,
-        &req,
-        &contract,
-    )
-    .await?;
+    authorize_runtime_request(&state, "terminate", &req, &contract).await?;
     validate_shard_identity(&req.tenant_id, &req.shard_id)?;
     let execution_class = req.execution_class;
     let tenant_id = req.tenant_id.clone();
@@ -1126,25 +1078,26 @@ fn execution_backend_name(backend: ExecutionBackend) -> &'static str {
     }
 }
 
-async fn authorize_runtime_request<T: Serialize>(
+async fn authorize_runtime_request<T>(
     state: &AppState,
     operation: &str,
-    tenant_id: &str,
-    shard_id: &str,
-    execution_class: ExecutionClass,
-    execution_backend: ExecutionBackend,
-    runtime_epoch: u64,
     request: &T,
     contract: &RuntimeContract,
-) -> Result<(), ApiError> {
+) -> Result<(), ApiError>
+where
+    T: Serialize + RuntimeRequestIdentity,
+{
+    let expected = ExpectedRuntimeRequest {
+        operation,
+        tenant_id: request.tenant_id(),
+        shard_id: request.shard_id(),
+        execution_class: execution_class_name(request.execution_class()),
+        execution_backend: execution_backend_name(request.execution_backend()),
+        runtime_epoch: request.runtime_epoch(),
+    };
     let expires_at = runtime_auth::verify(
         state.runtime_control_secret.as_slice(),
-        operation,
-        tenant_id,
-        shard_id,
-        execution_class_name(execution_class),
-        execution_backend_name(execution_backend),
-        runtime_epoch,
+        &expected,
         request,
         contract,
     )
@@ -1162,6 +1115,7 @@ async fn authorize_runtime_request<T: Serialize>(
     }
     Ok(())
 }
+
 
 fn validate_firecracker_target(
     execution_class: ExecutionClass,
