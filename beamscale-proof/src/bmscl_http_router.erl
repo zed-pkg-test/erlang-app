@@ -64,8 +64,8 @@ attach_route_context(Context0, Method, Path, Target) ->
     Route0 = maps:with(
                [actor_path, source_path, route_id, function_id, artifact_digest,
                 entrypoint, path_params, execution_class, experimental_profile,
-                protocol, namespace, virtual_shards, shards_per_actor,
-                drain_timeout_ms],
+                protocol, isolation_class, namespace, virtual_shards,
+                shards_per_actor, drain_timeout_ms],
                Target),
     Route = Route0#{method => normalize_context_value(Method),
                     path => normalize_context_value(Path),
