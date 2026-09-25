@@ -1,0 +1,41 @@
+name: beamscale-experimental-faas-proof
+
+on:
+  push:
+    branches:
+      - beamscale-faas-proof-20260924
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          otp-version: '27.3'
+      - name: Compile exact experimental modules
+        run: |
+          mkdir -p beamscale-proof/ebin
+          erlc -Werror -o beamscale-proof/ebin beamscale-proof/src/*.erl
+          erlc -Werror -o beamscale-proof/ebin beamscale-proof/test/*.erl
+      - name: Run experimental profile and actor tests
+        run: |
+          erl -noshell -pa beamscale-proof/ebin -eval '
+            application:load({application, bmscl_supervisor,
+                              [{vsn, "proof"},
+                               {modules, []},
+                               {applications, [kernel, stdlib, crypto]},
+                               {env, []}]}),
+            {ok, _} = application:ensure_all_started(crypto),
+            ok = eunit:test(
+                   [bmscl_faas_profile_tests,
+                    bmscl_durable_actor_tests,
+                    bmscl_experimental_route_tests],
+                   [verbose]),
+            halt(0).'
