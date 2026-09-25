@@ -32,14 +32,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -q '9024b512c905f980b7117962f340ad7e556e52f9' SOURCE_PROOF.md
-          grep -q 'bf56aa7d6971e25d109ce977e0aaec01222ceedb' SOURCE_PROOF.md
+          grep -q 'd7f2a3df0532e9a7b28fc7551b019d5332ed83ef' SOURCE_PROOF.md
+          grep -q '59aed7b9cb4adfd93a5b3d1744287f9bcfe2a4d0' SOURCE_PROOF.md
           grep -q '9261acc26e1285e75d005355b06bab4e478e6ae1' SOURCE_PROOF.md
-          test "$(git hash-object scripts/linux/ores-proc-isolate.sh)" = 'd9195d1406247940bbd456ee67af3c55dbfc600d'
-          test "$(git hash-object tests/linux_helper_tripwire_contract.rs)" = 'af068e03f451235c686db341b7a15ff922778f55'
+          test "$(git hash-object scripts/linux/ores-proc-isolate.sh)" = '55840e9672969d7847e44a57bdb4c800c8454031'
+          test "$(git hash-object tests/linux_helper_tripwire_contract.rs)" = 'bcd8ad50940477a82cc756a5d953617095a1a96f'
+          test "$(git hash-object tests/nixos_trusted_helper_contract.rs)" = '052c4e8a3c46037d5b120b81b0308ad6e92bd8ee'
           test "$(git hash-object src/platform/mod.rs)" = '767ec7e24722729cbbba3bb8f21d2528090668bd'
           test "$(git hash-object src/platform/linux.rs)" = '9e0bff1e2c90353e8321fde4df9abe48aefb6b51'
-          test "$(git hash-object tests/nixos_trusted_helper_contract.rs)" = '5f0fec46e5c228d81594cd67a442342d025c6bbe'
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
