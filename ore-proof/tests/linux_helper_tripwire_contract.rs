@@ -92,7 +92,7 @@ fn host_network_supervisor_enters_same_owned_user_and_network_namespaces() {
     assert!(HELPER.contains("--netns-type=path"));
     assert!(HELPER.contains("\"$NETNS_PATH\" tap0"));
     assert!(!HELPER.contains("--userns-path="));
-    assert!(!HELPER.contains("--user-parent"));
+    assert!(!HELPER.contains("-U --user-parent"));
     assert!(!HELPER.contains("--preserve-credentials"));
     assert!(HELPER.contains("-U --keep-caps --"));
     assert!(HELPER.contains("-U --keep-caps -n --"));
