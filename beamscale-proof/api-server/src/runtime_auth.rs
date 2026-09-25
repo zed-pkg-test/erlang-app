@@ -29,6 +29,16 @@ pub struct RuntimeContract {
     pub signature: String,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct RuntimeRequestTarget<'a> {
+    pub operation: &'a str,
+    pub tenant_id: &'a str,
+    pub shard_id: &'a str,
+    pub execution_class: &'a str,
+    pub execution_backend: &'a str,
+    pub runtime_epoch: u64,
+}
+
 pub fn load_secret() -> Result<Vec<u8>, String> {
     let value = env::var("BMSCL_RUNTIME_CONTROL_SECRET")
         .map_err(|_| "BMSCL_RUNTIME_CONTROL_SECRET is required".to_string())?;
@@ -41,12 +51,7 @@ pub fn load_secret() -> Result<Vec<u8>, String> {
 
 pub fn sign_request<'a, T: Serialize + ?Sized>(
     secret: &[u8],
-    operation: &str,
-    tenant_id: &str,
-    shard_id: &str,
-    execution_class: &str,
-    execution_backend: &str,
-    runtime_epoch: u64,
+    target: &RuntimeRequestTarget<'_>,
     request: &'a T,
 ) -> Result<SignedRequest<'a, T>, String> {
     if secret.len() < 32 {
@@ -65,12 +70,12 @@ pub fn sign_request<'a, T: Serialize + ?Sized>(
     let request_sha256 = request_sha256(request)?;
     let mut contract = RuntimeContract {
         version: CONTRACT_VERSION.into(),
-        operation: operation.into(),
-        tenant_id: tenant_id.into(),
-        shard_id: shard_id.into(),
-        execution_class: execution_class.into(),
-        execution_backend: execution_backend.into(),
-        runtime_epoch,
+        operation: target.operation.into(),
+        tenant_id: target.tenant_id.into(),
+        shard_id: target.shard_id.into(),
+        execution_class: target.execution_class.into(),
+        execution_backend: target.execution_backend.into(),
+        runtime_epoch: target.runtime_epoch,
         request_sha256: request_sha256.clone(),
         issued_at_unix,
         expires_at_unix: issued_at_unix + ttl,
@@ -166,12 +171,14 @@ mod tests {
         let request = Request { value: 42 };
         let signed = sign_request(
             secret,
-            "invoke",
-            "tenant-a",
-            "0",
-            "phoenix",
-            "firecracker",
-            7,
+            &RuntimeRequestTarget {
+                operation: "invoke",
+                tenant_id: "tenant-a",
+                shard_id: "0",
+                execution_class: "phoenix",
+                execution_backend: "firecracker",
+                runtime_epoch: 7,
+            },
             &request,
         )
         .unwrap();
