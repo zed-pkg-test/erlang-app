@@ -1,0 +1,9 @@
+{
+  "schema_version": "beamscale.phoenix-e2e-source-lock.v2",
+  "sources": {
+    "beamscale/bmscl-cli": "2a9dd1bf8835ec59c84362ac756839730fbbc7f4",
+    "beamscale/bmscl-infra": "db8aa2d106d065e8073f79a21be9fb4255982702",
+    "beamscale/bmscl-api-server.rs": "b5ab68b02abd04f9cd8f1848b6644d9b60acb37a",
+    "beamscale/bmscl-supervisor": "3c1ed4d9ab4e2d75d1430c376f1a85facf9a0212"
+  }
+}
