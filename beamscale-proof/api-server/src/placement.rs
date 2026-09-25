@@ -434,17 +434,16 @@ impl PlacementService {
                             "Firecracker runtime control secret is unavailable".into(),
                         )
                     })?;
-                let signed = runtime_auth::sign_request(
-                    secret,
-                    "activate",
-                    &key.tenant_id,
-                    &key.shard_id,
-                    execution_class_name(key.execution_class),
-                    execution_backend_name(key.execution_class.backend()),
+                let target = runtime_auth::RuntimeRequestTarget {
+                    operation: "activate",
+                    tenant_id: &key.tenant_id,
+                    shard_id: &key.shard_id,
+                    execution_class: execution_class_name(key.execution_class),
+                    execution_backend: execution_backend_name(key.execution_class.backend()),
                     runtime_epoch,
-                    &request,
-                )
-                .map_err(HostAttemptError::Unavailable)?;
+                };
+                let signed = runtime_auth::sign_request(secret, &target, &request)
+                    .map_err(HostAttemptError::Unavailable)?;
                 builder.json(&signed).send()
             }
             ExecutionBackend::BareProcess => builder.json(&request).send(),
@@ -514,17 +513,16 @@ impl PlacementService {
                             "Firecracker runtime control secret is unavailable".into(),
                         )
                     })?;
-                let signed = runtime_auth::sign_request(
-                    secret,
+                let target = runtime_auth::RuntimeRequestTarget {
                     operation,
-                    &key.tenant_id,
-                    &key.shard_id,
-                    execution_class_name(key.execution_class),
-                    execution_backend_name(key.execution_class.backend()),
+                    tenant_id: &key.tenant_id,
+                    shard_id: &key.shard_id,
+                    execution_class: execution_class_name(key.execution_class),
+                    execution_backend: execution_backend_name(key.execution_class.backend()),
                     runtime_epoch,
-                    body,
-                )
-                .map_err(HostAttemptError::Unavailable)?;
+                };
+                let signed = runtime_auth::sign_request(secret, &target, body)
+                    .map_err(HostAttemptError::Unavailable)?;
                 builder.json(&signed).send()
             }
             ExecutionBackend::BareProcess => builder.json(body).send(),
