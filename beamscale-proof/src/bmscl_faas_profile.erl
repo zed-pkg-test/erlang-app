@@ -73,7 +73,7 @@ validate(phoenix_v1, Class, _Protocol, _Target) ->
     {error, {unsupported_phoenix_execution_class, Class}};
 validate(durable_actor_v1, durable_actor, http, Target) ->
     Namespace0 = value(namespace, Target, undefined),
-    case {nonempty_binary(Namespace0, 256),
+    case {durable_namespace(Namespace0),
           positive_int(value(virtual_shards, Target, ?DEFAULT_VIRTUAL_SHARDS), 64, 65536),
           positive_int(value(shards_per_actor, Target, ?DEFAULT_SHARDS_PER_ACTOR), 1, 4096)} of
         {{ok, Namespace}, {ok, VirtualShards}, {ok, ShardsPerActor}}
@@ -149,6 +149,16 @@ profile_item(_) -> invalid.
 positive_int(Value, Min, Max)
   when is_integer(Value), Value >= Min, Value =< Max -> {ok, Value};
 positive_int(_, _, _) -> error.
+
+durable_namespace(Value) ->
+    case nonempty_binary(Value, 128) of
+        {ok, Namespace} ->
+            case re:run(Namespace, <<"^[A-Za-z0-9._-]+$">>, [{capture, none}]) of
+                match -> {ok, Namespace};
+                nomatch -> error
+            end;
+        error -> error
+    end.
 
 nonempty_binary(Value, Max) when is_binary(Value),
                                  byte_size(Value) > 0,
