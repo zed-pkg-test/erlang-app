@@ -210,11 +210,7 @@ async fn ensure(
     let gate_index = shard_gate_index(execution_class, &tenant_id, &shard_id);
     let _gate = state.shard_gates[gate_index].lock().await;
 
-    let existing = match state
-        .host
-        .get(execution_class, &tenant_id, &shard_id)
-        .await
-    {
+    let existing = match state.host.get(execution_class, &tenant_id, &shard_id).await {
         Ok(status) => Some(status),
         Err(HostError::UnknownShard) => None,
         Err(err) => return Err(map_err(err)),
@@ -887,11 +883,7 @@ fn shard_epoch_key(
     }
 }
 
-fn shard_gate_index(
-    execution_class: ExecutionClass,
-    tenant_id: &str,
-    shard_id: &str,
-) -> usize {
+fn shard_gate_index(execution_class: ExecutionClass, tenant_id: &str, shard_id: &str) -> usize {
     let mut hasher = DefaultHasher::new();
     execution_class.hash(&mut hasher);
     tenant_id.hash(&mut hasher);
@@ -905,15 +897,11 @@ async fn clear_observed_for_shard(
     tenant_id: &str,
     shard_id: &str,
 ) {
-    state
-        .observed_activation
-        .write()
-        .await
-        .retain(|key, _| {
-            key.execution_class != execution_class
-                || key.tenant_id != tenant_id
-                || key.shard_id != shard_id
-        });
+    state.observed_activation.write().await.retain(|key, _| {
+        key.execution_class != execution_class
+            || key.tenant_id != tenant_id
+            || key.shard_id != shard_id
+    });
 }
 
 async fn deployment_allowed(
@@ -1108,11 +1096,10 @@ mod tests {
             ExecutionBackend::Firecracker
         )
         .is_ok());
-        assert!(validate_firecracker_target(
-            ExecutionClass::Faas,
-            ExecutionBackend::Firecracker
-        )
-        .is_err());
+        assert!(
+            validate_firecracker_target(ExecutionClass::Faas, ExecutionBackend::Firecracker)
+                .is_err()
+        );
         assert!(validate_firecracker_target(
             ExecutionClass::Phoenix,
             ExecutionBackend::BareProcess
