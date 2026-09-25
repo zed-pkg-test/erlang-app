@@ -53,7 +53,6 @@ fn one_bubblewrap_setup_owns_all_tenant_namespaces() {
     assert!(!HELPER.contains("ORES_PI_SUPERVISOR_USERNS"));
     assert!(!HELPER.contains("need unshare"));
     assert!(!HELPER.contains("--map-root-user"));
-    assert!(!HELPER.contains("/proc/sys/user/max_user_namespaces"));
 
     let tenant = HELPER
         .find("BWRAP_ARGS=(")
@@ -62,7 +61,6 @@ fn one_bubblewrap_setup_owns_all_tenant_namespaces() {
     assert!(tenant_slice.contains("--unshare-user"));
     assert!(tenant_slice.contains("--uid 0"));
     assert!(tenant_slice.contains("--gid 0"));
-    assert!(tenant_slice.contains("--disable-userns"));
     assert!(tenant_slice.contains("--unshare-ipc"));
     assert!(tenant_slice.contains("--unshare-pid"));
     assert!(tenant_slice.contains("--unshare-net"));
@@ -72,16 +70,32 @@ fn one_bubblewrap_setup_owns_all_tenant_namespaces() {
 }
 
 #[test]
-fn host_network_supervisor_enters_network_owner_user_namespace() {
+fn no_network_path_keeps_bubblewrap_nested_userns_lockdown() {
+    assert!(HELPER.contains("BWRAP_ARGS+=(--disable-userns)"));
+}
+
+#[test]
+fn external_network_preconfigures_one_userns_and_disables_nested_userns() {
+    assert!(HELPER.contains("--userns-block-fd 6"));
+    assert!(HELPER.contains("--assert-userns-disabled"));
+    assert!(HELPER.contains("/proc/$setup_pid/setgroups"));
+    assert!(HELPER.contains("/proc/$setup_pid/uid_map"));
+    assert!(HELPER.contains("/proc/$setup_pid/gid_map"));
+    assert!(HELPER.contains("/proc/sys/user/max_user_namespaces"));
+    assert!(HELPER.contains("printf '0 %s 1\\n' \"$HOST_UID\""));
+    assert!(HELPER.contains("printf '0 %s 1\\n' \"$HOST_GID\""));
+}
+
+#[test]
+fn host_network_supervisor_enters_same_owned_user_and_network_namespaces() {
     assert!(HELPER.contains("NETNS_PATH=\"/proc/$child_pid/ns/net\""));
     assert!(HELPER.contains("--netns-type=path"));
     assert!(HELPER.contains("\"$NETNS_PATH\" tap0"));
     assert!(!HELPER.contains("--userns-path="));
-    assert!(!HELPER.contains("--enable-sandbox"));
-    assert!(HELPER.contains("-U --user-parent --keep-caps --"));
-    assert!(HELPER.contains("-U --user-parent --keep-caps -n --"));
-    assert!(!HELPER.contains("-U --preserve-credentials -n --"));
-    assert!(!HELPER.contains("\"$NSENTER\" -t \"$child_pid\" -n \"$IP\""));
+    assert!(!HELPER.contains("--user-parent"));
+    assert!(!HELPER.contains("--preserve-credentials"));
+    assert!(HELPER.contains("-U --keep-caps --"));
+    assert!(HELPER.contains("-U --keep-caps -n --"));
 }
 
 #[test]
