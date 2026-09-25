@@ -1,0 +1,39 @@
+name: beamscale-admin-revocation-proof
+
+on:
+  pull_request:
+    paths:
+      - admin-proof/**
+      - .github/workflows/beamscale-admin-revocation-proof.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: admin-proof
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+      - name: Verify exact source identity
+        run: |
+          set -euo pipefail
+          grep -q '41042eed3d65e59ae17812b7bf45aed4f362baf4' SOURCE_PROOF.md
+          grep -q '0c69d2f3af27193c02ebcd302580f1ba38df4fba' SOURCE_PROOF.md
+          grep -q 'f932ee873b3286bb68e8de04ed7766da2781cbf0' SOURCE_PROOF.md
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test --all-targets
