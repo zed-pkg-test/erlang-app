@@ -32,12 +32,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'd7f2a3df0532e9a7b28fc7551b019d5332ed83ef' SOURCE_PROOF.md
-          grep -q '59aed7b9cb4adfd93a5b3d1744287f9bcfe2a4d0' SOURCE_PROOF.md
+          grep -q '7361ddbb527eb34dba1b6fdc1266fe3466e55f73' SOURCE_PROOF.md
+          grep -q 'a129944af6c00b9d2ae35e7adfc3b389258a45fc' SOURCE_PROOF.md
           grep -q '9261acc26e1285e75d005355b06bab4e478e6ae1' SOURCE_PROOF.md
           test "$(git hash-object scripts/linux/ores-proc-isolate.sh)" = '55840e9672969d7847e44a57bdb4c800c8454031'
-          test "$(git hash-object tests/linux_helper_tripwire_contract.rs)" = 'bcd8ad50940477a82cc756a5d953617095a1a96f'
-          test "$(git hash-object tests/nixos_trusted_helper_contract.rs)" = '052c4e8a3c46037d5b120b81b0308ad6e92bd8ee'
+          test "$(git hash-object tests/linux_helper_tripwire_contract.rs)" = 'c03c77ccf51e653472609de22e1e178ac30e2bba'
+          test "$(git hash-object tests/nixos_trusted_helper_contract.rs)" = '755e9eef0ec9d692dbcb9dc53abd38aed0f5a2b2'
           test "$(git hash-object src/platform/mod.rs)" = '767ec7e24722729cbbba3bb8f21d2528090668bd'
           test "$(git hash-object src/platform/linux.rs)" = '9e0bff1e2c90353e8321fde4df9abe48aefb6b51'
       - name: Format
