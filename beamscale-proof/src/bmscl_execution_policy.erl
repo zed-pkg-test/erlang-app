@@ -1,6 +1,6 @@
 -module(bmscl_execution_policy).
 
--export([authority/1, required_backend/1, admit_worker/2]).
+-export([authority/1, required_backend/1, admit_worker/2, admit_microvm/3]).
 
 -spec required_backend(map()) -> bare_process | firecracker | {error, term()}.
 required_backend(Target) ->
@@ -13,14 +13,24 @@ required_backend(Target) ->
 -spec admit_worker(map(), term()) -> ok | {error, term()}.
 admit_worker(Target, WorkerBackend0) ->
     case {required_backend(Target), normalize_backend(WorkerBackend0)} of
-        {{error, _} = Error, _} ->
-            Error;
-        {_, {error, _} = Error} ->
-            Error;
-        {Backend, Backend} ->
-            ok;
+        {{error, _} = Error, _} -> Error;
+        {_, {error, _} = Error} -> Error;
+        {Backend, Backend} -> ok;
         {Required, Actual} ->
             {error, {execution_backend_mismatch, Required, Actual}}
+    end.
+
+-spec admit_microvm(map(), atom(), term()) -> {ok, map()} | {error, term()}.
+admit_microvm(Target, Operation, WorkerTenant) ->
+    case admit_worker(Target, firecracker) of
+        {error, _} = Error -> Error;
+        ok ->
+            case maps:find(microvm_contract, Target) of
+                error -> {error, microvm_contract_required};
+                {ok, Contract} ->
+                    bmscl_microvm_contract:verify(
+                      Contract, Operation, WorkerTenant)
+            end
     end.
 
 -spec authority(map()) -> {ok, map()} | {error, term()}.
