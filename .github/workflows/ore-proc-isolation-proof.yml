@@ -32,8 +32,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'd4dad9eec6900bf1873ce42650d9b24395e879ec' SOURCE_PROOF.md
-          grep -q '6cb09d8ce9773b3389fd8af3dd57576f08b9cfb1' SOURCE_PROOF.md
+          grep -q 'dc024eddb29b95dba5e22e0fcaef7b7d57a2bb06' SOURCE_PROOF.md
+          grep -q '099688a8a03701137c7e28e01cf7179594377f48' SOURCE_PROOF.md
           grep -q '99faa05ef8f1184ee0d4931f589a2c510280305a' SOURCE_PROOF.md
           grep -q '3370ce2dc71646745f95ee74d4c2c0769d4b4dcc' SOURCE_PROOF.md
       - name: Format
