@@ -3,7 +3,7 @@ name: beamscale-experimental-faas-proof
 on:
   push:
     branches:
-      - beamscale-microvm-contract-proof-20260925
+      - beamscale-critical-sections-proof-20260925
 
 permissions:
   contents: read
@@ -36,6 +36,7 @@ jobs:
             ok = eunit:test(
                    [bmscl_faas_profile_tests,
                     bmscl_durable_actor_tests,
+                    bmscl_critical_section_tests,
                     bmscl_experimental_route_tests,
                     bmscl_private_dns_namespace_tests,
                     bmscl_execution_boundary_tests,
