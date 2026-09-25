@@ -36,5 +36,7 @@ fn single_bubblewrap_boundary_from_main_is_preserved() {
     assert!(HELPER.contains("--disable-userns"));
     assert!(HELPER.contains("--cap-drop ALL"));
     assert!(HELPER.contains("--netns-type=path"));
-    assert!(HELPER.contains("--userns-path=\"$USERNS_PATH\""));
+    assert!(!HELPER.contains("--userns-path="));
+    assert!(HELPER.contains("-U --user-parent --keep-caps --"));
+    assert!(HELPER.contains("-U --user-parent --keep-caps -n --"));
 }
