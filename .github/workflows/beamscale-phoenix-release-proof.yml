@@ -1,0 +1,42 @@
+name: beamscale-phoenix-release-proof
+
+on:
+  push:
+    branches:
+      - beamscale-phoenix-release-proof-20260925
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          otp-version: "27.3"
+          elixir-version: "1.18.4"
+          version-type: strict
+      - name: Build Phoenix production release
+        working-directory: beamscale-phoenix-proof/fixture
+        run: |
+          mix deps.get
+          mix compile
+          MIX_ENV=prod mix release --overwrite
+          test -x _build/prod/rel/bmscl_phoenix_fixture/bin/bmscl_phoenix_fixture
+          test -f _build/prod/rel/bmscl_phoenix_fixture/releases/start_erl.data
+      - name: Verify locked Firecracker runtime contract
+        working-directory: beamscale-phoenix-proof
+        run: |
+          python3 verify_phoenix_runtime_preflight.py             evidence/phoenix-source-lock.json             infra api supervisor
+      - name: Report KVM boundary
+        run: |
+          if [ -c /dev/kvm ]; then
+            echo "KVM present; this proof still does not claim a production kernel/rootfs/Jailer boot."
+          else
+            echo "No /dev/kvm; release/control-plane proof only."
+          fi
