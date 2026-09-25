@@ -1079,19 +1079,9 @@ async fn require_file(path: &Path) -> Result<(), HostError> {
     Ok(())
 }
 
-async fn remove_if_exists(path: &Path) -> Result<(), HostError> {
-    match fs::remove_file(path).await {
-        Ok(()) => Ok(()),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(err) => Err(err.into()),
-    }
-}
-
 #[derive(Debug)]
 struct RuntimePaths {
     dir: PathBuf,
-    api_socket: PathBuf,
-    vsock_path: PathBuf,
     snapshot_state: PathBuf,
     snapshot_mem: PathBuf,
 }
@@ -1107,8 +1097,6 @@ impl RuntimePaths {
             .join(safe_shard)
             .join(record.runtime_epoch.to_string());
         Self {
-            api_socket: dir.join("firecracker.sock"),
-            vsock_path: dir.join("control.vsock"),
             snapshot_state: dir.join("vm.state"),
             snapshot_mem: dir.join("vm.mem"),
             dir,
