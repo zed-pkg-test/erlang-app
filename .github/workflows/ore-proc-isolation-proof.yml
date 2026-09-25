@@ -1,9 +1,7 @@
 name: ore-proc-isolation-proof
 
 on:
-  push:
-    branches:
-      - ore-proc-isolation-proof-20260924
+  pull_request:
     paths:
       - ore-proof/**
       - .github/workflows/ore-proc-isolation-proof.yml
