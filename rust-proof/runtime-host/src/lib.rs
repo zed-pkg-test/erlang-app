@@ -1500,7 +1500,10 @@ mod tests {
         })
         .await
         .unwrap();
-        let sample = host.metering("t1", "0").await.unwrap();
+        let sample = host
+            .metering(ExecutionClass::Phoenix, "t1", "0")
+            .await
+            .unwrap();
         assert_eq!(sample.request_count, 2);
         assert_eq!(sample.ingress_bytes, 100);
         assert_eq!(sample.egress_bytes, 250);
