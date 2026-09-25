@@ -30,6 +30,16 @@ pub struct RuntimeContract {
     pub signature: String,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ExpectedRuntimeRequest<'a> {
+    pub operation: &'a str,
+    pub tenant_id: &'a str,
+    pub shard_id: &'a str,
+    pub execution_class: &'a str,
+    pub execution_backend: &'a str,
+    pub runtime_epoch: u64,
+}
+
 pub fn load_secret() -> Result<Vec<u8>, String> {
     let value = env::var("BMSCL_RUNTIME_CONTROL_SECRET")
         .map_err(|_| "BMSCL_RUNTIME_CONTROL_SECRET is required".to_string())?;
@@ -42,12 +52,7 @@ pub fn load_secret() -> Result<Vec<u8>, String> {
 
 pub fn verify<T: Serialize>(
     secret: &[u8],
-    expected_operation: &str,
-    expected_tenant_id: &str,
-    expected_shard_id: &str,
-    expected_execution_class: &str,
-    expected_execution_backend: &str,
-    expected_runtime_epoch: u64,
+    expected: &ExpectedRuntimeRequest<'_>,
     request: &T,
     contract: &RuntimeContract,
 ) -> Result<u64, String> {
@@ -58,12 +63,12 @@ pub fn verify<T: Serialize>(
     if contract.version != CONTRACT_VERSION {
         return Err("unsupported runtime control contract".into());
     }
-    if contract.operation != expected_operation
-        || contract.tenant_id != expected_tenant_id
-        || contract.shard_id != expected_shard_id
-        || contract.execution_class != expected_execution_class
-        || contract.execution_backend != expected_execution_backend
-        || contract.runtime_epoch != expected_runtime_epoch
+    if contract.operation != expected.operation
+        || contract.tenant_id != expected.tenant_id
+        || contract.shard_id != expected.shard_id
+        || contract.execution_class != expected.execution_class
+        || contract.execution_backend != expected.execution_backend
+        || contract.runtime_epoch != expected.runtime_epoch
     {
         return Err("runtime control contract identity mismatch".into());
     }
@@ -215,12 +220,14 @@ mod tests {
         let contract = signed(secret, &request);
         assert!(verify(
             secret,
-            "invoke",
-            "tenant-a",
-            "0",
-            "phoenix",
-            "firecracker",
-            7,
+            &ExpectedRuntimeRequest {
+                operation: "invoke",
+                tenant_id: "tenant-a",
+                shard_id: "0",
+                execution_class: "phoenix",
+                execution_backend: "firecracker",
+                runtime_epoch: 7,
+            },
             &request,
             &contract
         )
@@ -234,12 +241,14 @@ mod tests {
         let contract = signed(secret, &request);
         assert!(verify(
             secret,
-            "invoke",
-            "tenant-a",
-            "0",
-            "phoenix",
-            "firecracker",
-            7,
+            &ExpectedRuntimeRequest {
+                operation: "invoke",
+                tenant_id: "tenant-a",
+                shard_id: "0",
+                execution_class: "phoenix",
+                execution_backend: "firecracker",
+                runtime_epoch: 7,
+            },
             &Request { value: 43 },
             &contract
         )
@@ -253,12 +262,14 @@ mod tests {
         let contract = signed(secret, &request);
         assert!(verify(
             secret,
-            "invoke",
-            "tenant-b",
-            "0",
-            "phoenix",
-            "firecracker",
-            7,
+            &ExpectedRuntimeRequest {
+                operation: "invoke",
+                tenant_id: "tenant-b",
+                shard_id: "0",
+                execution_class: "phoenix",
+                execution_backend: "firecracker",
+                runtime_epoch: 7,
+            },
             &request,
             &contract
         )
