@@ -9,7 +9,22 @@ dispatcher_unavailable_fails_closed_test() ->
     try
         ?assertEqual(
            {error, {firecracker_runtime_dispatcher_unavailable, invoke_async}},
-           bmscl_experimental_runtime:invoke_async(#{}, req, #{}))
+           bmscl_experimental_runtime:invoke_async(firecracker_target(), req, #{}))
+    after
+        restore(Previous)
+    end.
+
+bare_process_work_cannot_enter_firecracker_dispatcher_test() ->
+    Previous = application:get_env(
+                 bmscl_supervisor, experimental_runtime_dispatcher_module),
+    ok = application:set_env(
+           bmscl_supervisor, experimental_runtime_dispatcher_module,
+           bmscl_experimental_runtime_test_dispatcher),
+    try
+        ?assertEqual(
+           {error, {firecracker_runtime_required,
+                    invoke_async, local_bare_process}},
+           bmscl_experimental_runtime:invoke_async(#{}, request, #{}))
     after
         restore(Previous)
     end.
@@ -21,7 +36,7 @@ configured_dispatcher_receives_firecracker_work_test() ->
            bmscl_supervisor, experimental_runtime_dispatcher_module,
            bmscl_experimental_runtime_test_dispatcher),
     try
-        Target = #{isolation_class => firecracker},
+        Target = firecracker_target(),
         ?assertMatch(
            {ok, {external_invoke, Target, request, #{}}},
            bmscl_experimental_runtime:invoke_async(Target, request, #{})),
@@ -46,10 +61,33 @@ invalid_dispatcher_fails_closed_test() ->
         ?assertMatch(
            {error, {invalid_firecracker_runtime_dispatcher,
                     definitely_missing_bmscl_dispatcher, _}},
-           bmscl_experimental_runtime:invoke_async(#{}, request, #{}))
+           bmscl_experimental_runtime:invoke_async(
+             firecracker_target(), request, #{}))
     after
         restore(Previous)
     end.
+
+profile_backend_mismatch_never_dispatches_test() ->
+    Previous = application:get_env(
+                 bmscl_supervisor, experimental_runtime_dispatcher_module),
+    ok = application:set_env(
+           bmscl_supervisor, experimental_runtime_dispatcher_module,
+           bmscl_experimental_runtime_test_dispatcher),
+    try
+        ?assertEqual(
+           {error, {experimental_profile_backend_mismatch,
+                    phoenix_v1, firecracker, bare_process}},
+           bmscl_experimental_runtime:invoke_async(#{
+               experimental_profile => phoenix_v1,
+               isolation_class => bare_process
+           }, request, #{}))
+    after
+        restore(Previous)
+    end.
+
+firecracker_target() ->
+    #{experimental_profile => phoenix_v1,
+      isolation_class => firecracker}.
 
 restore({ok, Value}) ->
     application:set_env(
