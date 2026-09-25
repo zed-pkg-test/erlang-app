@@ -939,7 +939,6 @@ fn check_epoch(record: &ShardRecord, requested: u64) -> Result<(), HostError> {
     }
 }
 
-
 fn validate_execution_request(
     execution_class: ExecutionClass,
     execution_backend: ExecutionBackend,
@@ -1400,26 +1399,23 @@ mod tests {
 
     #[test]
     fn lifecycle_mutations_revalidate_backend() {
-        assert!(validate_execution_request(
-            ExecutionClass::Phoenix,
-            ExecutionBackend::Firecracker
-        )
-        .is_ok());
+        assert!(
+            validate_execution_request(ExecutionClass::Phoenix, ExecutionBackend::Firecracker)
+                .is_ok()
+        );
         assert!(validate_execution_request(
             ExecutionClass::DurableActor,
             ExecutionBackend::Firecracker
         )
         .is_ok());
-        assert!(validate_execution_request(
-            ExecutionClass::Phoenix,
-            ExecutionBackend::BareProcess
-        )
-        .is_err());
-        assert!(validate_execution_request(
-            ExecutionClass::Faas,
-            ExecutionBackend::Firecracker
-        )
-        .is_err());
+        assert!(
+            validate_execution_request(ExecutionClass::Phoenix, ExecutionBackend::BareProcess)
+                .is_err()
+        );
+        assert!(
+            validate_execution_request(ExecutionClass::Faas, ExecutionBackend::Firecracker)
+                .is_err()
+        );
     }
 
     #[test]
