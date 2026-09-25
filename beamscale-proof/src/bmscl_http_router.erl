@@ -14,21 +14,12 @@ invoke(Method, Path, Request, Context, Timeout) ->
 invoke_async(Method, Path, Request, Context0) ->
     case bmscl_route_matcher:resolve(Method, Path) of
         {ok, Target} ->
-            case bmscl_faas_profile:ensure_enabled(Target) of
-                ok ->
+            case admit_target(Target) of
+                {ok, Backend} ->
                     case bmscl_faas_profile:execution_class(Target) of
                         request ->
                             Context = attach_route_context(Context0, Method, Path, Target),
-                            case bmscl_execution_boundary:classify(Target) of
-                                local_bare_process ->
-                                    DeploymentId = maps:get(deployment_id, Target),
-                                    bmscl_router:invoke_async(DeploymentId, Request, Context);
-                                firecracker ->
-                                    bmscl_experimental_runtime:invoke_async(
-                                      Target, Request, Context);
-                                {error, Reason} ->
-                                    {error, Reason}
-                            end;
+                            invoke_request(Backend, Target, Request, Context);
                         connection ->
                             {error, connection_route_requires_registration};
                         durable_actor ->
@@ -45,14 +36,11 @@ register_connection(Method, Path, TransportPid, Context0) when is_pid(TransportP
         {ok, Target} ->
             case bmscl_faas_profile:execution_class(Target) of
                 connection ->
-                    Context = attach_route_context(Context0, Method, Path, Target),
-                    case bmscl_execution_boundary:classify(Target) of
-                        local_bare_process ->
-                            bmscl_phoenix_connections:register(
-                              TransportPid, Target, Context);
-                        firecracker ->
-                            bmscl_experimental_runtime:register_connection(
-                              Target, TransportPid, Context);
+                    case admit_target(Target) of
+                        {ok, Backend} ->
+                            Context = attach_route_context(Context0, Method, Path, Target),
+                            register_connection_backend(
+                              Backend, Target, TransportPid, Context);
                         {error, Reason} ->
                             {error, Reason}
                     end;
@@ -69,13 +57,10 @@ locate_durable_actor(Method, Path, TenantId, ApplicationId, ObjectKey) ->
         {ok, Target} ->
             case bmscl_faas_profile:execution_class(Target) of
                 durable_actor ->
-                    case bmscl_execution_boundary:classify(Target) of
-                        local_bare_process ->
-                            bmscl_durable_registry:locate(
-                              Target, TenantId, ApplicationId, ObjectKey);
-                        firecracker ->
-                            bmscl_experimental_runtime:locate_durable_actor(
-                              Target, TenantId, ApplicationId, ObjectKey);
+                    case admit_target(Target) of
+                        {ok, Backend} ->
+                            locate_durable_backend(
+                              Backend, Target, TenantId, ApplicationId, ObjectKey);
                         {error, Reason} ->
                             {error, Reason}
                     end;
@@ -84,6 +69,36 @@ locate_durable_actor(Method, Path, TenantId, ApplicationId, ObjectKey) ->
             end;
         Error -> Error
     end.
+
+admit_target(Target) ->
+    case bmscl_faas_profile:ensure_enabled(Target) of
+        ok ->
+            case bmscl_execution_boundary:classify(Target) of
+                local_bare_process -> {ok, local_bare_process};
+                firecracker -> {ok, firecracker};
+                {error, _} = Error -> Error
+            end;
+        {error, _} = Error ->
+            Error
+    end.
+
+invoke_request(local_bare_process, Target, Request, Context) ->
+    DeploymentId = maps:get(deployment_id, Target),
+    bmscl_router:invoke_async(DeploymentId, Request, Context);
+invoke_request(firecracker, Target, Request, Context) ->
+    bmscl_experimental_runtime:invoke_async(Target, Request, Context).
+
+register_connection_backend(local_bare_process, Target, TransportPid, Context) ->
+    bmscl_phoenix_connections:register(TransportPid, Target, Context);
+register_connection_backend(firecracker, Target, TransportPid, Context) ->
+    bmscl_experimental_runtime:register_connection(
+      Target, TransportPid, Context).
+
+locate_durable_backend(local_bare_process, Target, TenantId, ApplicationId, ObjectKey) ->
+    bmscl_durable_registry:locate(Target, TenantId, ApplicationId, ObjectKey);
+locate_durable_backend(firecracker, Target, TenantId, ApplicationId, ObjectKey) ->
+    bmscl_experimental_runtime:locate_durable_actor(
+      Target, TenantId, ApplicationId, ObjectKey).
 
 attach_route_context(Context0, Method, Path, Target) ->
     Route0 = maps:with(
