@@ -271,25 +271,23 @@ if ! IFS= read -r status_line <&8; then
 fi
 child_pid=$(printf '%s\n' "$status_line" | sed -n 's/.*"child-pid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p')
 [[ -n "$child_pid" ]] || fatal "unable to parse bubblewrap child PID from: $status_line"
-USERNS_PATH="/proc/$child_pid/ns/user"
-[[ -e "$USERNS_PATH" ]] || fatal 'sandbox user namespace disappeared before network setup'
-
 NETNS_PATH="/proc/$child_pid/ns/net"
 [[ -e "$NETNS_PATH" ]] || fatal 'sandbox network namespace disappeared before network setup'
 
-# slirp4netns runs in the host supervisor against the exact Bubblewrap-owned
-# namespace paths. Supplying the owning user namespace explicitly gives the
-# unprivileged helper namespace-scoped capabilities before it enters the netns;
-# no host-root capability or nested sandbox boundary is introduced.
-"$SLIRP" \
-  --configure \
-  --mtu=65520 \
-  --disable-host-loopback \
-  --enable-seccomp \
-  --netns-type=path \
-  --userns-path="$USERNS_PATH" \
-  --ready-fd=6 \
-  "$NETNS_PATH" tap0 \
+# --disable-userns leaves the tenant in a nested user namespace after Bubblewrap
+# creates its network namespace. The network namespace is owned by the parent
+# user namespace, so a host-side helper must enter that parent before setns(net).
+# nsenter grants capabilities only in that descendant parent user namespace;
+# the supervisor never receives capabilities in the host's initial userns.
+"$NSENTER" -t "$child_pid" -U --user-parent --keep-caps -- \
+  "$SLIRP" \
+    --configure \
+    --mtu=65520 \
+    --disable-host-loopback \
+    --enable-seccomp \
+    --netns-type=path \
+    --ready-fd=6 \
+    "$NETNS_PATH" tap0 \
   6>"$READY_FIFO" &
 SLIRP_PID=$!
 
@@ -299,11 +297,12 @@ if ! IFS= read -r -n 1 ready <"$READY_FIFO"; then
 fi
 [[ "$ready" == '1' ]] || fatal 'slirp4netns did not acknowledge network readiness'
 
-# Enter the target's user namespace before its network namespace so namespace-
-# scoped CAP_NET_ADMIN applies only to that sandbox. Preserve the caller's
-# credentials rather than requesting host-root identity.
+# Enter the user namespace that owns the target network namespace, then enter
+# the network namespace. Namespace-root here is scoped to Bubblewrap's parent
+# userns and is not host root. The tenant remains in the nested --disable-userns
+# namespace with all capabilities dropped.
 ns_net() {
-  "$NSENTER" -t "$child_pid" -U --preserve-credentials -n -- "$@"
+  "$NSENTER" -t "$child_pid" -U --user-parent --keep-caps -n -- "$@"
 }
 
 ns_net "$IP" link set lo down \
