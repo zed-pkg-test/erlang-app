@@ -14,6 +14,33 @@ firecracker_routes_are_external_test() ->
     ?assertEqual(firecracker,
                  bmscl_execution_boundary:classify(#{isolation_class => firecracker})).
 
+experimental_profile_cannot_claim_bare_process_test() ->
+    ?assertEqual(
+       {error, {experimental_profile_backend_mismatch,
+                phoenix_v1, firecracker, bare_process}},
+       bmscl_execution_boundary:classify(#{
+           experimental_profile => phoenix_v1,
+           isolation_class => bare_process
+       })),
+    ?assertEqual(
+       {error, {experimental_profile_backend_mismatch,
+                durable_actor_v1, firecracker, bare_process}},
+       bmscl_execution_boundary:classify(#{
+           experimental_profile => durable_actor_v1,
+           isolation_class => bare_process
+       })).
+
+unknown_profile_fails_closed_test() ->
+    ?assertEqual(
+       {error, {unsupported_execution_profile, unknown_profile}},
+       bmscl_execution_boundary:classify(#{
+           experimental_profile => unknown_profile,
+           isolation_class => firecracker
+       })).
+
 invalid_isolation_class_fails_closed_test() ->
     ?assertEqual({error, {invalid_isolation_class, container}},
-                 bmscl_execution_boundary:classify(#{isolation_class => container})).
+                 bmscl_execution_boundary:classify(#{
+                     experimental_profile => phoenix_v1,
+                     isolation_class => container
+                 })).
