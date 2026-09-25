@@ -371,17 +371,16 @@ async fn dispatch_to_guest(
                     "Firecracker runtime control secret is unavailable",
                 )
             })?;
-            let signed = runtime_auth::sign_request(
-                secret,
-                "invoke",
-                &runtime.tenant_id,
-                &runtime.shard_id,
-                execution_class_name(runtime.execution_class),
-                execution_backend_name(runtime.execution_backend),
-                runtime.runtime_epoch,
-                &request,
-            )
-            .map_err(|err| api_error(StatusCode::SERVICE_UNAVAILABLE, err))?;
+            let target = runtime_auth::RuntimeRequestTarget {
+                operation: "invoke",
+                tenant_id: &runtime.tenant_id,
+                shard_id: &runtime.shard_id,
+                execution_class: execution_class_name(runtime.execution_class),
+                execution_backend: execution_backend_name(runtime.execution_backend),
+                runtime_epoch: runtime.runtime_epoch,
+            };
+            let signed = runtime_auth::sign_request(secret, &target, &request)
+                .map_err(|err| api_error(StatusCode::SERVICE_UNAVAILABLE, err))?;
             builder.json(&signed).send()
         }
         ExecutionBackend::BareProcess => builder.json(&request).send(),
