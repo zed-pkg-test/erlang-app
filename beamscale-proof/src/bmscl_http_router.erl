@@ -18,9 +18,17 @@ invoke_async(Method, Path, Request, Context0) ->
                 ok ->
                     case bmscl_faas_profile:execution_class(Target) of
                         request ->
-                            DeploymentId = maps:get(deployment_id, Target),
                             Context = attach_route_context(Context0, Method, Path, Target),
-                            bmscl_router:invoke_async(DeploymentId, Request, Context);
+                            case bmscl_execution_boundary:classify(Target) of
+                                local_bare_process ->
+                                    DeploymentId = maps:get(deployment_id, Target),
+                                    bmscl_router:invoke_async(DeploymentId, Request, Context);
+                                firecracker ->
+                                    bmscl_experimental_runtime:invoke_async(
+                                      Target, Request, Context);
+                                {error, Reason} ->
+                                    {error, Reason}
+                            end;
                         connection ->
                             {error, connection_route_requires_registration};
                         durable_actor ->
@@ -38,7 +46,16 @@ register_connection(Method, Path, TransportPid, Context0) when is_pid(TransportP
             case bmscl_faas_profile:execution_class(Target) of
                 connection ->
                     Context = attach_route_context(Context0, Method, Path, Target),
-                    bmscl_phoenix_connections:register(TransportPid, Target, Context);
+                    case bmscl_execution_boundary:classify(Target) of
+                        local_bare_process ->
+                            bmscl_phoenix_connections:register(
+                              TransportPid, Target, Context);
+                        firecracker ->
+                            bmscl_experimental_runtime:register_connection(
+                              Target, TransportPid, Context);
+                        {error, Reason} ->
+                            {error, Reason}
+                    end;
                 Class ->
                     {error, {route_is_not_connection_class, Class}}
             end;
@@ -52,8 +69,16 @@ locate_durable_actor(Method, Path, TenantId, ApplicationId, ObjectKey) ->
         {ok, Target} ->
             case bmscl_faas_profile:execution_class(Target) of
                 durable_actor ->
-                    bmscl_durable_registry:locate(
-                      Target, TenantId, ApplicationId, ObjectKey);
+                    case bmscl_execution_boundary:classify(Target) of
+                        local_bare_process ->
+                            bmscl_durable_registry:locate(
+                              Target, TenantId, ApplicationId, ObjectKey);
+                        firecracker ->
+                            bmscl_experimental_runtime:locate_durable_actor(
+                              Target, TenantId, ApplicationId, ObjectKey);
+                        {error, Reason} ->
+                            {error, Reason}
+                    end;
                 Class ->
                     {error, {route_is_not_durable_actor_class, Class}}
             end;
