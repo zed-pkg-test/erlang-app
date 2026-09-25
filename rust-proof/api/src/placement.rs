@@ -154,8 +154,7 @@ impl PlacementService {
         let faas_raw = env::var("BMSCL_RUNTIME_HOSTS_FAAS")
             .or_else(|_| env::var("BMSCL_RUNTIME_HOSTS"))
             .unwrap_or_else(|_| "http://127.0.0.1:9090".into());
-        let firecracker_raw =
-            env::var("BMSCL_RUNTIME_HOSTS_FIRECRACKER").unwrap_or_default();
+        let firecracker_raw = env::var("BMSCL_RUNTIME_HOSTS_FIRECRACKER").unwrap_or_default();
         Self::new(parse_hosts(&faas_raw), parse_hosts(&firecracker_raw))
     }
 
@@ -804,7 +803,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn execution_classes_select_distinct_backend_pools() {
         let service = PlacementService::new(
@@ -838,7 +836,10 @@ mod tests {
             assert_eq!(tenant_isolation(class), "single_tenant_microvm");
             assert!(runtime_policy(class).snapshot_enabled);
         }
-        assert_eq!(ExecutionClass::Faas.backend(), ExecutionBackend::BareProcess);
+        assert_eq!(
+            ExecutionClass::Faas.backend(),
+            ExecutionBackend::BareProcess
+        );
         assert!(!runtime_policy(ExecutionClass::Faas).snapshot_enabled);
     }
 
