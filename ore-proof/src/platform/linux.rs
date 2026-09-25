@@ -15,7 +15,7 @@ use crate::config::{Config, NetworkMode};
 use crate::error::{Error, Result};
 
 const HELPER: &str = include_str!("../../scripts/linux/ores-proc-isolate.sh");
-const TRUSTED_PATH: &str = "/usr/sbin:/usr/bin:/sbin:/bin";
+const TRUSTED_PATH: &str = "/usr/sbin:/usr/bin:/sbin:/bin:/run/current-system/sw/bin";
 
 fn validate_honeypot_boundary() -> Result<()> {
     let dir = Path::new(BEAMSCALE_TRIPWIRE_DIR);
@@ -62,7 +62,10 @@ pub(super) fn launch(plan: &SandboxPlan) -> Result<i32> {
         .write_all(HELPER.as_bytes())
         .map_err(Error::HelperIo)?;
 
-    let mut command = Command::new("/bin/bash");
+    let bash = trusted_lookup("bash").ok_or_else(|| {
+        Error::SandboxUnavailable("trusted bash is unavailable in system helper paths".to_owned())
+    })?;
+    let mut command = Command::new(bash);
     command
         .env_clear()
         .env("PATH", TRUSTED_PATH)
@@ -107,6 +110,7 @@ pub(super) fn launch(plan: &SandboxPlan) -> Result<i32> {
 
 pub(super) fn doctor(config: &Config, beamscale_honeypot: bool) -> DoctorReport {
     let mut checks = Vec::new();
+    push_binary(&mut checks, "bash");
     let bwrap_available = trusted_lookup("bwrap").is_some();
     push_binary(&mut checks, "bwrap");
     if any_external_network(config) {
