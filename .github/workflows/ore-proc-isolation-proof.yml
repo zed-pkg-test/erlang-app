@@ -32,10 +32,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -q '12e18d8653e6bb2a653a4606623b4addbf5f23be' SOURCE_PROOF.md
-          grep -q '4b623fcc07f79ca24a36d4252e341decf3344115' SOURCE_PROOF.md
-          grep -q '99faa05ef8f1184ee0d4931f589a2c510280305a' SOURCE_PROOF.md
-          grep -q '3370ce2dc71646745f95ee74d4c2c0769d4b4dcc' SOURCE_PROOF.md
+          grep -q '9128f2cc90bc1f9eb3e81d3461451b5a3dc37f02' SOURCE_PROOF.md
+          grep -q 'fb78460fa1963df9d68044c929bb2d5b81f8a56c' SOURCE_PROOF.md
+          grep -q '9261acc26e1285e75d005355b06bab4e478e6ae1' SOURCE_PROOF.md
+          test "$(git hash-object scripts/linux/ores-proc-isolate.sh)" = 'd9195d1406247940bbd456ee67af3c55dbfc600d'
+          test "$(git hash-object tests/linux_helper_tripwire_contract.rs)" = 'af068e03f451235c686db341b7a15ff922778f55'
+          test "$(git hash-object src/platform/mod.rs)" = '767ec7e24722729cbbba3bb8f21d2528090668bd'
+          test "$(git hash-object src/platform/linux.rs)" = '9e0bff1e2c90353e8321fde4df9abe48aefb6b51'
+          test "$(git hash-object tests/nixos_trusted_helper_contract.rs)" = '1a1946145d8f7eb00e40536ba028ad388ca1412d'
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
@@ -114,25 +118,6 @@ jobs:
               group: strict
               command: [/usr/bin/true]
           YAML
-      - name: Diagnose single Bubblewrap namespace support
-        shell: bash
-        run: |
-          set -u
-          bwrap_path=$(command -v bwrap)
-          for ns in ipc pid net uts cgroup; do
-            echo "=== direct --unshare-user + --unshare-${ns} ==="
-            "$bwrap_path" --die-with-parent --new-session \
-              --unshare-user --uid 0 --gid 0 --disable-userns \
-              "--unshare-${ns}" --cap-drop ALL \
-              --ro-bind / / --dev /dev -- /bin/true
-            echo "rc=$?"
-          done
-          echo "=== direct combined ==="
-          "$bwrap_path" --die-with-parent --new-session \
-            --unshare-user --uid 0 --gid 0 --disable-userns \
-            --unshare-ipc --unshare-pid --unshare-net --unshare-uts --unshare-cgroup \
-            --cap-drop ALL --ro-bind / / --dev /dev -- /bin/true
-          echo "combined_rc=$?"
       - name: Trusted boundary launches
         run: target/debug/ores-proc-isolation run true --beamscale-honeypot --config /tmp/bmscl-proof.yaml
       - name: Writable tripwire directory fails closed before sandbox launch
@@ -154,3 +139,104 @@ jobs:
             sudo kill "$(cat /tmp/bmscl-proof-socket.pid)" 2>/dev/null || true
           fi
           sudo rm -rf /opt/beamscale/honeypot-bin /run/bmscl-honeypot
+
+  linux-external-boundary:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: ore-proof
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+      - name: Install network sandbox helpers
+        shell: bash
+        env:
+          NEEDRESTART_MODE: a
+        run: |
+          set -euo pipefail
+          sudo -E apt-get update
+          sudo -E apt-get install -y apparmor-profiles apparmor-utils bubblewrap slirp4netns iproute2 iptables curl
+          if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || printf '0')" == '1' ]]; then
+            profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+            test -f "$profile"
+            sudo install -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          fi
+      - name: Build exact candidate with boundary fixture
+        run: cargo build --quiet --bins --examples
+      - name: Write strict external policy
+        shell: bash
+        run: |
+          cat >/tmp/ores-pi-external-proof.yaml <<'YAML'
+          version: 1
+          defaults:
+            group: no-net
+          groups:
+            no-net:
+              network:
+                mode: none
+            external:
+              network:
+                mode: external
+                deny_loopback: true
+                deny_private_networks: true
+          processes:
+            true:
+              group: no-net
+              command: [/usr/bin/true]
+            passwd:
+              group: no-net
+              command: [/usr/bin/cat, /etc/passwd]
+            internet:
+              group: external
+              command: [/usr/bin/curl, --fail, --silent, --show-error, --head, https://example.com]
+            curl-flex:
+              group: external
+              command: [/usr/bin/curl, --fail, --silent, --show-error]
+          YAML
+      - name: No-network launch works and host filesystem stays hidden
+        shell: bash
+        run: |
+          set -euo pipefail
+          target/debug/ores-proc-isolation run true --config /tmp/ores-pi-external-proof.yaml
+          if target/debug/ores-proc-isolation run passwd --config /tmp/ores-pi-external-proof.yaml; then
+            echo 'sandbox unexpectedly read /etc/passwd' >&2
+            exit 1
+          fi
+      - name: Public Internet egress succeeds
+        run: target/debug/ores-proc-isolation run internet --config /tmp/ores-pi-external-proof.yaml
+      - name: Host loopback and host interface stay unreachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          loop_server=''
+          host_server=''
+          cleanup() {
+            [[ -z "$loop_server" ]] || kill "$loop_server" 2>/dev/null || true
+            [[ -z "$host_server" ]] || kill "$host_server" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          target/debug/examples/loopback_fixture 127.0.0.1:18080 >/tmp/loopback.log 2>&1 &
+          loop_server=$!
+          sleep 1
+          curl --fail --silent http://127.0.0.1:18080 >/dev/null
+          if target/debug/ores-proc-isolation run curl-flex --config /tmp/ores-pi-external-proof.yaml -- http://127.0.0.1:18080; then
+            echo 'sandbox unexpectedly reached host loopback' >&2
+            exit 1
+          fi
+
+          host_ip=$(ip -o -4 addr show scope global | awk 'NR == 1 { split($4, a, "/"); print a[1] }')
+          test -n "$host_ip"
+          target/debug/examples/loopback_fixture 0.0.0.0:18081 >/tmp/host-interface.log 2>&1 &
+          host_server=$!
+          sleep 1
+          curl --fail --silent "http://${host_ip}:18081" >/dev/null
+          if target/debug/ores-proc-isolation run curl-flex --config /tmp/ores-pi-external-proof.yaml -- "http://${host_ip}:18081"; then
+            echo "sandbox unexpectedly reached host interface ${host_ip}" >&2
+            exit 1
+          fi
