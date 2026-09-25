@@ -3,15 +3,26 @@
 -export([invoke_async/3, register_connection/3, locate_durable_actor/4]).
 
 invoke_async(Target, Request, Context) ->
-    call(invoke_async, [Target, Request, Context]).
+    call(invoke_async, Target, [Request, Context]).
 
 register_connection(Target, TransportPid, Context) ->
-    call(register_connection, [Target, TransportPid, Context]).
+    call(register_connection, Target, [TransportPid, Context]).
 
 locate_durable_actor(Target, TenantId, ApplicationId, ObjectKey) ->
-    call(locate_durable_actor, [Target, TenantId, ApplicationId, ObjectKey]).
+    call(locate_durable_actor, Target, [TenantId, ApplicationId, ObjectKey]).
 
-call(Operation, Args) ->
+call(Operation, Target, RestArgs) ->
+    case bmscl_execution_boundary:classify(Target) of
+        firecracker ->
+            dispatch(Operation, [Target | RestArgs]);
+        local_bare_process ->
+            {error, {firecracker_runtime_required,
+                     Operation, local_bare_process}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+dispatch(Operation, Args) ->
     case application:get_env(
            bmscl_supervisor, experimental_runtime_dispatcher_module, undefined) of
         undefined ->
