@@ -5,6 +5,7 @@ mod macos;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -220,8 +221,38 @@ pub(crate) fn any_private_network_denial(config: &Config) -> bool {
 }
 
 pub(crate) fn trusted_lookup(name: &str) -> Option<PathBuf> {
-    const DIRS: &[&str] = &["/usr/sbin", "/usr/bin", "/sbin", "/bin"];
-    DIRS.iter()
-        .map(|dir| Path::new(dir).join(name))
-        .find(|path| path.is_file())
+    if name.is_empty() || name.contains('/') {
+        return None;
+    }
+
+    // NixOS exposes system packages through /run/current-system/sw/bin while
+    // conventional distributions use /usr/{s,}bin and /{s,}bin. Never consult
+    // the caller's PATH: every accepted helper must resolve to a root-owned,
+    // executable, non-writable regular file. The NixOS profile gets an
+    // additional invariant that its canonical target lives in the immutable
+    // /nix/store.
+    const DIRS: &[(&str, bool)] = &[
+        ("/usr/sbin", false),
+        ("/usr/bin", false),
+        ("/sbin", false),
+        ("/bin", false),
+        ("/run/current-system/sw/bin", true),
+    ];
+
+    DIRS.iter().find_map(|(dir, require_nix_store)| {
+        let candidate = Path::new(dir).join(name);
+        let canonical = fs::canonicalize(&candidate).ok()?;
+        let metadata = fs::metadata(&canonical).ok()?;
+        let safe_file = metadata.is_file()
+            && metadata.uid() == 0
+            && metadata.mode() & 0o022 == 0
+            && metadata.mode() & 0o111 != 0;
+        if !safe_file {
+            return None;
+        }
+        if *require_nix_store && !canonical.starts_with("/nix/store/") {
+            return None;
+        }
+        Some(canonical)
+    })
 }
