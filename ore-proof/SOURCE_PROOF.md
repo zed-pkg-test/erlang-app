@@ -2,15 +2,15 @@
 
 Source repository: `ORESoftware/ores-proc-isolation-cli`
 Candidate source PR: `#10`
-Exact candidate PR head: `dc024eddb29b95dba5e22e0fcaef7b7d57a2bb06`
-Exact source tree: `099688a8a03701137c7e28e01cf7179594377f48`
+Exact candidate PR head: `12e18d8653e6bb2a653a4606623b4addbf5f23be`
+Exact source tree: `4b623fcc07f79ca24a36d4252e341decf3344115`
 
 This carrier starts from the exact green #9 single-Bubblewrap snapshot and overlays
 the exact three files changed by #10:
 
 - `src/platform/mod.rs`: `767ec7e24722729cbbba3bb8f21d2528090668bd`
 - `src/platform/linux.rs`: `9e0bff1e2c90353e8321fde4df9abe48aefb6b51`
-- `tests/nixos_trusted_helper_contract.rs`: `f669a5dc584f7e681bb31656b299caeb94ee0e38`
+- `tests/nixos_trusted_helper_contract.rs`: `1a1946145d8f7eb00e40536ba028ad388ca1412d`
 
 The underlying single-boundary Linux helper and its namespace contract remain the
 already-proven #9 blobs:
