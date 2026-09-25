@@ -1,0 +1,41 @@
+name: beamscale-rust-runtime-proof
+
+on:
+  push:
+    branches:
+      - beamscale-rust-runtime-proof-20260925
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --manifest-path rust-proof/api/Cargo.toml --all -- --check
+      - run: cargo clippy --manifest-path rust-proof/api/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path rust-proof/api/Cargo.toml --all-targets
+
+  runtime-host:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BMSCL_RUNTIME_BACKEND: mock
+      BMSCL_ALLOW_MOCK_BACKEND: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --manifest-path rust-proof/runtime-host/Cargo.toml --all -- --check
+      - run: cargo clippy --manifest-path rust-proof/runtime-host/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path rust-proof/runtime-host/Cargo.toml --all-targets
