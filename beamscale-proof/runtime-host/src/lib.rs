@@ -838,9 +838,7 @@ impl RuntimeHost {
             let _ = cleanup_jail(&self.config, &jailed).await;
             return Err(err);
         }
-        if let Err(err) =
-            stage_guest_restore_files(&self.config, &runtime_paths, &jailed).await
-        {
+        if let Err(err) = stage_guest_restore_files(&self.config, &runtime_paths, &jailed).await {
             let _ = terminate_pid(jailed.pid).await;
             let _ = cleanup_jail(&self.config, &jailed).await;
             return Err(err);
@@ -880,7 +878,8 @@ impl RuntimeHost {
             return Ok(());
         }
         let runtime_paths = RuntimePaths::new(&self.config.runtime_dir, record);
-        let jailed = JailedRuntime::for_record(&self.config, record, record.process_pid.unwrap_or(0))?;
+        let jailed =
+            JailedRuntime::for_record(&self.config, record, record.process_pid.unwrap_or(0))?;
         let api = record
             .api_socket
             .clone()
@@ -1281,11 +1280,7 @@ struct JailedRuntime {
 }
 
 impl JailedRuntime {
-    fn for_record(
-        config: &HostConfig,
-        record: &ShardRecord,
-        pid: u32,
-    ) -> Result<Self, HostError> {
+    fn for_record(config: &HostConfig, record: &ShardRecord, pid: u32) -> Result<Self, HostError> {
         let exec_name = config
             .firecracker_bin
             .file_name()
@@ -1427,11 +1422,7 @@ async fn stage_guest_restore_files(
     Ok(())
 }
 
-async fn prepare_jailer_writable_dir(
-    path: &Path,
-    uid: u32,
-    gid: u32,
-) -> Result<(), HostError> {
+async fn prepare_jailer_writable_dir(path: &Path, uid: u32, gid: u32) -> Result<(), HostError> {
     use std::{
         ffi::CString,
         os::unix::{ffi::OsStrExt, fs::PermissionsExt},
@@ -1504,10 +1495,12 @@ async fn prepare_network_namespace(
         .stderr(Stdio::piped())
         .status()
         .await
-        .map_err(|err| HostError::Firecracker(format!(
-            "create network namespace {}: {err}",
-            jailed.netns_name
-        )))?;
+        .map_err(|err| {
+            HostError::Firecracker(format!(
+                "create network namespace {}: {err}",
+                jailed.netns_name
+            ))
+        })?;
     if status.success() {
         Ok(())
     } else {
@@ -1533,10 +1526,12 @@ async fn delete_network_namespace(
         .stderr(Stdio::piped())
         .status()
         .await
-        .map_err(|err| HostError::Firecracker(format!(
-            "delete network namespace {}: {err}",
-            jailed.netns_name
-        )))?;
+        .map_err(|err| {
+            HostError::Firecracker(format!(
+                "delete network namespace {}: {err}",
+                jailed.netns_name
+            ))
+        })?;
     if status.success() {
         Ok(())
     } else {

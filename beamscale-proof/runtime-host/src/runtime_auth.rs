@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{env, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    env,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 pub const CONTRACT_VERSION: &str = "bmscl.runtime-control.v1";
 const MAX_TTL_SECONDS: u64 = 60;
@@ -75,13 +78,19 @@ pub fn verify<T: Serialize>(
     if contract.issued_at_unix > now.saturating_add(CLOCK_SKEW_SECONDS)
         || contract.expires_at_unix < now
         || contract.expires_at_unix <= contract.issued_at_unix
-        || contract.expires_at_unix.saturating_sub(contract.issued_at_unix) > MAX_TTL_SECONDS
+        || contract
+            .expires_at_unix
+            .saturating_sub(contract.issued_at_unix)
+            > MAX_TTL_SECONDS
     {
         return Err("runtime control contract expired or invalid".into());
     }
     if contract.nonce.len() < 16
         || contract.nonce.len() > 128
-        || !contract.nonce.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        || !contract
+            .nonce
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
     {
         return Err("runtime control contract nonce is invalid".into());
     }
@@ -93,10 +102,7 @@ pub fn verify<T: Serialize>(
         return Err("runtime control request digest mismatch".into());
     }
     let expected_signature = signature_for(secret, contract, &request_sha256);
-    if !constant_time_eq(
-        contract.signature.as_bytes(),
-        expected_signature.as_bytes(),
-    ) {
+    if !constant_time_eq(contract.signature.as_bytes(), expected_signature.as_bytes()) {
         return Err("runtime control signature mismatch".into());
     }
     Ok(contract.expires_at_unix)
@@ -108,11 +114,7 @@ pub fn request_sha256<T: Serialize>(request: &T) -> Result<String, String> {
     Ok(hex_lower(&Sha256::digest(bytes)))
 }
 
-pub fn signature_for(
-    secret: &[u8],
-    contract: &RuntimeContract,
-    request_sha256: &str,
-) -> String {
+pub fn signature_for(secret: &[u8], contract: &RuntimeContract, request_sha256: &str) -> String {
     let canonical = format!(
         "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
         contract.version,

@@ -2,7 +2,6 @@ mod artifact_store;
 mod runtime_auth;
 
 use artifact_store::{AdmittedArtifact, ArtifactStore};
-use runtime_auth::{ExpectedRuntimeRequest, RuntimeContract, SignedRequest};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -14,6 +13,7 @@ use bmscl_runtime_host::{
     EnsureShardRequest, EpochRequest, ExecutionBackend, ExecutionClass, HostConfig, HostError,
     LifecycleState, RuntimeHost, ShardStatus, TouchRequest,
 };
+use runtime_auth::{ExpectedRuntimeRequest, RuntimeContract, SignedRequest};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -167,9 +167,8 @@ async fn main() {
         .init();
 
     let host = Arc::new(RuntimeHost::new(HostConfig::from_env()));
-    let runtime_control_secret = Arc::new(
-        runtime_auth::load_secret().expect("load BMSCL_RUNTIME_CONTROL_SECRET"),
-    );
+    let runtime_control_secret =
+        Arc::new(runtime_auth::load_secret().expect("load BMSCL_RUNTIME_CONTROL_SECRET"));
     let guest_vsock_port = env::var("BMSCL_GUEST_VSOCK_PORT")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -247,7 +246,10 @@ async fn ensure(
     State(state): State<AppState>,
     Json(signed): Json<SignedRequest<EnsureShardRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let SignedRequest { contract, request: req } = signed;
+    let SignedRequest {
+        contract,
+        request: req,
+    } = signed;
     authorize_runtime_request(&state, "ensure", &req, &contract).await?;
     validate_shard_identity(&req.tenant_id, &req.shard_id)?;
     let requested_digest = normalize_build_digest(&req.deployment_digest)
@@ -301,7 +303,10 @@ async fn start(
     State(state): State<AppState>,
     Json(signed): Json<SignedRequest<EpochRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let SignedRequest { contract, request: req } = signed;
+    let SignedRequest {
+        contract,
+        request: req,
+    } = signed;
     authorize_runtime_request(&state, "start", &req, &contract).await?;
     validate_shard_identity(&req.tenant_id, &req.shard_id)?;
     let _barrier = state.lifecycle_barrier.read().await;
@@ -314,7 +319,10 @@ async fn activate(
     State(state): State<AppState>,
     Json(signed): Json<SignedRequest<ActivateRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let SignedRequest { contract, request: req } = signed;
+    let SignedRequest {
+        contract,
+        request: req,
+    } = signed;
     authorize_runtime_request(&state, "activate", &req, &contract).await?;
     validate_shard_identity(&req.tenant_id, &req.shard_id)?;
     validate_firecracker_target(req.execution_class, req.execution_backend)?;
@@ -451,7 +459,10 @@ async fn touch(
     State(state): State<AppState>,
     Json(signed): Json<SignedRequest<TouchRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let SignedRequest { contract, request: req } = signed;
+    let SignedRequest {
+        contract,
+        request: req,
+    } = signed;
     authorize_runtime_request(&state, "touch", &req, &contract).await?;
     validate_shard_identity(&req.tenant_id, &req.shard_id)?;
     if !(-1..=1).contains(&req.active_delta) {
@@ -470,7 +481,10 @@ async fn invoke(
     State(state): State<AppState>,
     Json(signed): Json<SignedRequest<InvokeRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let SignedRequest { contract, request: req } = signed;
+    let SignedRequest {
+        contract,
+        request: req,
+    } = signed;
     authorize_runtime_request(&state, "invoke", &req, &contract).await?;
     validate_shard_identity(&req.tenant_id, &req.shard_id)?;
     validate_firecracker_target(req.execution_class, req.execution_backend)?;
@@ -841,7 +855,10 @@ async fn warm_idle(
     State(state): State<AppState>,
     Json(signed): Json<SignedRequest<EpochRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let SignedRequest { contract, request: req } = signed;
+    let SignedRequest {
+        contract,
+        request: req,
+    } = signed;
     authorize_runtime_request(&state, "warm_idle", &req, &contract).await?;
     validate_shard_identity(&req.tenant_id, &req.shard_id)?;
     let _barrier = state.lifecycle_barrier.read().await;
@@ -859,7 +876,10 @@ async fn hibernate(
     State(state): State<AppState>,
     Json(signed): Json<SignedRequest<EpochRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let SignedRequest { contract, request: req } = signed;
+    let SignedRequest {
+        contract,
+        request: req,
+    } = signed;
     authorize_runtime_request(&state, "hibernate", &req, &contract).await?;
     validate_shard_identity(&req.tenant_id, &req.shard_id)?;
     let _barrier = state.lifecycle_barrier.read().await;
@@ -872,7 +892,10 @@ async fn terminate(
     State(state): State<AppState>,
     Json(signed): Json<SignedRequest<EpochRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let SignedRequest { contract, request: req } = signed;
+    let SignedRequest {
+        contract,
+        request: req,
+    } = signed;
     authorize_runtime_request(&state, "terminate", &req, &contract).await?;
     validate_shard_identity(&req.tenant_id, &req.shard_id)?;
     let execution_class = req.execution_class;
@@ -1107,7 +1130,10 @@ where
         .map_err(|message| api_error(StatusCode::INTERNAL_SERVER_ERROR, message))?;
     let mut consumed = state.consumed_nonces.lock().await;
     consumed.retain(|_, expiry| *expiry >= now);
-    if consumed.insert(contract.nonce.clone(), expires_at).is_some() {
+    if consumed
+        .insert(contract.nonce.clone(), expires_at)
+        .is_some()
+    {
         return Err(api_error(
             StatusCode::UNAUTHORIZED,
             "runtime control contract replay detected",
@@ -1115,7 +1141,6 @@ where
     }
     Ok(())
 }
-
 
 fn validate_firecracker_target(
     execution_class: ExecutionClass,

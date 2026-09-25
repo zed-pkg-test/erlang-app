@@ -426,14 +426,11 @@ impl PlacementService {
         let builder = self.client.post(format!("{host}/v1/shards/activate"));
         let response = match key.execution_class.backend() {
             ExecutionBackend::Firecracker => {
-                let secret = self
-                    .runtime_control_secret
-                    .as_deref()
-                    .ok_or_else(|| {
-                        HostAttemptError::Unavailable(
-                            "Firecracker runtime control secret is unavailable".into(),
-                        )
-                    })?;
+                let secret = self.runtime_control_secret.as_deref().ok_or_else(|| {
+                    HostAttemptError::Unavailable(
+                        "Firecracker runtime control secret is unavailable".into(),
+                    )
+                })?;
                 let target = runtime_auth::RuntimeRequestTarget {
                     operation: "activate",
                     tenant_id: &key.tenant_id,
@@ -448,8 +445,8 @@ impl PlacementService {
             }
             ExecutionBackend::BareProcess => builder.json(&request).send(),
         }
-            .await
-            .map_err(|e| HostAttemptError::Unavailable(e.to_string()))?;
+        .await
+        .map_err(|e| HostAttemptError::Unavailable(e.to_string()))?;
 
         let status = response.status();
         if status.is_success() {
@@ -505,14 +502,11 @@ impl PlacementService {
         let builder = self.client.post(url);
         let response = match key.execution_class.backend() {
             ExecutionBackend::Firecracker => {
-                let secret = self
-                    .runtime_control_secret
-                    .as_deref()
-                    .ok_or_else(|| {
-                        HostAttemptError::Unavailable(
-                            "Firecracker runtime control secret is unavailable".into(),
-                        )
-                    })?;
+                let secret = self.runtime_control_secret.as_deref().ok_or_else(|| {
+                    HostAttemptError::Unavailable(
+                        "Firecracker runtime control secret is unavailable".into(),
+                    )
+                })?;
                 let target = runtime_auth::RuntimeRequestTarget {
                     operation,
                     tenant_id: &key.tenant_id,

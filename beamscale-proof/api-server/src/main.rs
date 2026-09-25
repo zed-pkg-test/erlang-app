@@ -10,8 +10,8 @@ use axum::{
     Json, Router,
 };
 use placement::{
-    execution_backend_name, execution_class_name, ExecutionBackend, ExecutionClass,
-    PlacementError, PlacementService, RuntimePlacement,
+    execution_backend_name, execution_class_name, ExecutionBackend, ExecutionClass, PlacementError,
+    PlacementService, RuntimePlacement,
 };
 use reqwest::Client;
 use security::{SecurityClient, SecurityError};
@@ -386,12 +386,12 @@ async fn dispatch_to_guest(
         ExecutionBackend::BareProcess => builder.json(&request).send(),
     }
     .await
-        .map_err(|err| {
-            api_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                format!("guest dispatch transport failed: {err}"),
-            )
-        })?;
+    .map_err(|err| {
+        api_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("guest dispatch transport failed: {err}"),
+        )
+    })?;
 
     let status = response.status();
     if status.is_success() {

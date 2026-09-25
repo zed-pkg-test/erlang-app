@@ -1,6 +1,9 @@
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::{env, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    env,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use uuid::Uuid;
 
 pub const CONTRACT_VERSION: &str = "bmscl.runtime-control.v1";
@@ -92,11 +95,7 @@ fn request_sha256<T: Serialize + ?Sized>(request: &T) -> Result<String, String> 
     Ok(hex_lower(&Sha256::digest(bytes)))
 }
 
-fn signature_for(
-    secret: &[u8],
-    contract: &RuntimeContract,
-    request_sha256: &str,
-) -> String {
+fn signature_for(secret: &[u8], contract: &RuntimeContract, request_sha256: &str) -> String {
     let canonical = format!(
         "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
         contract.version,
