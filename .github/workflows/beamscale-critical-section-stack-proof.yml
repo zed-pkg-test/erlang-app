@@ -29,7 +29,7 @@ jobs:
       - name: Compile critical-section runtime and tests
         working-directory: critical-proof
         run: |
-          rebar3 get-deps
+          rebar3 compile
           mkdir -p ebin
           erlc -Werror -o ebin src/bmscl_durable_store.erl
           erlc -Werror -pa ebin -o ebin \
