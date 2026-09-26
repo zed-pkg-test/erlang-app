@@ -22,8 +22,9 @@ jobs:
       - name: Compile exact experimental modules
         run: |
           mkdir -p beamscale-proof/ebin
-          erlc -Werror -o beamscale-proof/ebin beamscale-proof/src/*.erl
-          erlc -Werror -o beamscale-proof/ebin beamscale-proof/test/*.erl
+          erlc -Werror -o beamscale-proof/ebin beamscale-proof/src/bmscl_durable_store.erl
+          erlc -Werror -pa beamscale-proof/ebin -o beamscale-proof/ebin beamscale-proof/src/*.erl
+          erlc -Werror -pa beamscale-proof/ebin -o beamscale-proof/ebin beamscale-proof/test/*.erl
       - name: Run experimental profile and actor tests
         run: |
           erl -noshell -pa beamscale-proof/ebin -eval '
