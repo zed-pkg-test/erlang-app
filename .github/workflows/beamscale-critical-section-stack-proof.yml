@@ -1,0 +1,45 @@
+name: beamscale-critical-section-erlang-proof
+
+on:
+  push:
+    branches:
+      - beamscale-critical-section-stack-proof-20260925
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          otp-version: "27.3"
+          version-type: strict
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Compile bounded critical-section model
+        run: |
+          rustc -D warnings critical-proof/conformance/critical_section_formal_model.rs -o "$RUNNER_TEMP/critical-model"
+          "$RUNNER_TEMP/critical-model"
+      - name: Compile critical-section runtime and tests
+        working-directory: critical-proof
+        run: |
+          mkdir -p ebin
+          erlc -Werror -o ebin src/bmscl_durable_store.erl
+          erlc -Werror -pa ebin -o ebin \
+            src/bmscl_critical_section_store.erl \
+            src/bmscl_critical_section_actor.erl \
+            src/bmscl_critical_section_registry.erl \
+            src/bmscl_guest_protocol.erl \
+            src/bmscl_guest_control.erl \
+            test/bmscl_test_durable_store.erl \
+            test/bmscl_critical_section_persistence_tests.erl \
+            test/bmscl_critical_section_protocol_tests.erl
+      - name: Run critical-section persistence and protocol EUnit
+        working-directory: critical-proof
+        run: |
+          erl -noshell -pa ebin -eval 'case eunit:test([bmscl_critical_section_persistence_tests,bmscl_critical_section_protocol_tests],[verbose]) of ok -> halt(0); _ -> halt(1) end.'
