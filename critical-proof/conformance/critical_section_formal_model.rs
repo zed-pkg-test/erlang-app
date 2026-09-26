@@ -160,9 +160,15 @@ fn step(input: State, action: Action) -> Option<State> {
     };
     assert!(
         next.current_owner_epoch >= input.current_owner_epoch,
-        "owner epoch regressed: {input:?} -> {next:?}"
+        "owner epoch regressed: {:?} -> {:?}", input, next
     );
-    assert!(invariant(next), "invalid state: {input:?} --{action:?}--> {next:?}");
+    assert!(
+        invariant(next),
+        "invalid state: {:?} --{:?}--> {:?}",
+        input,
+        action,
+        next
+    );
     Some(next)
 }
 
