@@ -19,6 +19,7 @@ jobs:
       - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
         with:
           otp-version: "27.3"
+          rebar3-version: "3.24.0"
           version-type: strict
       - uses: dtolnay/rust-toolchain@stable
       - name: Compile bounded critical-section model
@@ -28,6 +29,7 @@ jobs:
       - name: Compile critical-section runtime and tests
         working-directory: critical-proof
         run: |
+          rebar3 get-deps
           mkdir -p ebin
           erlc -Werror -o ebin src/bmscl_durable_store.erl
           erlc -Werror -pa ebin -o ebin \
@@ -42,4 +44,4 @@ jobs:
       - name: Run critical-section persistence and protocol EUnit
         working-directory: critical-proof
         run: |
-          erl -noshell -pa ebin -eval 'case eunit:test([bmscl_critical_section_persistence_tests,bmscl_critical_section_protocol_tests],[verbose]) of ok -> halt(0); _ -> halt(1) end.'
+          erl -noshell -pa ebin -pa _build/default/lib/jsx/ebin -eval 'case eunit:test([bmscl_critical_section_persistence_tests,bmscl_critical_section_protocol_tests],[verbose]) of ok -> halt(0); _ -> halt(1) end.'
