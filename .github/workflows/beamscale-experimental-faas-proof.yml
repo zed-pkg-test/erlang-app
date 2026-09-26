@@ -3,7 +3,7 @@ name: beamscale-experimental-faas-proof
 on:
   push:
     branches:
-      - beamscale-microvm-contract-proof-20260925
+      - beamscale-durable-fencing-proof-20260925
 
 permissions:
   contents: read
