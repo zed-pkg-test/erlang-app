@@ -8,8 +8,13 @@
 reset() ->
     case ets:whereis(?TABLE) of
         undefined -> ok;
-        _ -> ets:delete(?TABLE), ok
-    end.
+        _ -> ets:delete(?TABLE)
+    end,
+    _ = ets:new(
+          ?TABLE,
+          [named_table, public, set,
+           {read_concurrency, true}, {write_concurrency, true}]),
+    ok.
 
 load(Identity, _OwnerScope) ->
     Tab = ensure_table(),
