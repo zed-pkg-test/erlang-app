@@ -79,15 +79,23 @@ validate(durable_actor_v1, durable_actor, http, Target) ->
         {{ok, Namespace}, {ok, VirtualShards}, {ok, ShardsPerActor}}
           when ShardsPerActor =< VirtualShards,
                VirtualShards rem ShardsPerActor =:= 0 ->
-            firecracker_profile(
-              durable_actor_v1,
-              Target,
-              #{execution_class => durable_actor,
-                experimental_profile => durable_actor_v1,
-                protocol => http,
-                namespace => Namespace,
-                virtual_shards => VirtualShards,
-                shards_per_actor => ShardsPerActor});
+            case tenancy_class(value(tenancy_class, Target, tenant_dedicated)) of
+                {ok, tenant_dedicated} ->
+                    firecracker_profile(
+                      durable_actor_v1,
+                      Target,
+                      #{execution_class => durable_actor,
+                        experimental_profile => durable_actor_v1,
+                        protocol => http,
+                        tenancy_class => tenant_dedicated,
+                        namespace => Namespace,
+                        virtual_shards => VirtualShards,
+                        shards_per_actor => ShardsPerActor});
+                {ok, OtherTenancy} ->
+                    {error, {durable_actor_requires_tenant_dedicated, OtherTenancy}};
+                error ->
+                    {error, invalid_tenancy_class}
+            end;
         {error, _, _} -> {error, invalid_durable_namespace};
         {_, error, _} -> {error, invalid_virtual_shards};
         {_, _, error} -> {error, invalid_shards_per_actor};
@@ -145,6 +153,14 @@ profile_item(Item) when is_list(Item) -> profile_item(unicode:characters_to_bina
 profile_item(<<"phoenix_v1">>) -> phoenix_v1;
 profile_item(<<"durable_actor_v1">>) -> durable_actor_v1;
 profile_item(_) -> invalid.
+
+tenancy_class(tenant_dedicated) -> {ok, tenant_dedicated};
+tenancy_class(mixed_tenants) -> {ok, mixed_tenants};
+tenancy_class(<<"tenant_dedicated">>) -> {ok, tenant_dedicated};
+tenancy_class(<<"mixed_tenants">>) -> {ok, mixed_tenants};
+tenancy_class("tenant_dedicated") -> {ok, tenant_dedicated};
+tenancy_class("mixed_tenants") -> {ok, mixed_tenants};
+tenancy_class(_) -> error.
 
 positive_int(Value, Min, Max)
   when is_integer(Value), Value >= Min, Value =< Max -> {ok, Value};
