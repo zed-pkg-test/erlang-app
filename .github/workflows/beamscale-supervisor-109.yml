@@ -1,0 +1,61 @@
+name: BeamScale supervisor exact-head proof
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BMSCL_SUPERVISOR_SHA: a701fdada843424e00874e64ed209abd96442385
+
+jobs:
+  exact-head:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CROSS_REPO_READ_TOKEN: ${{ secrets.TEST_FLEET_READ_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Require private source read credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${CROSS_REPO_READ_TOKEN:-}" ]]; then
+            echo "::error title=Infrastructure blocked::TEST_FLEET_READ_TOKEN is required for exact private BeamScale proof."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: beamscale/bmscl-supervisor
+          ref: ${{ env.BMSCL_SUPERVISOR_SHA }}
+          path: supervisor
+          token: ${{ env.CROSS_REPO_READ_TOKEN }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
+        with:
+          otp-version: "27.3.4.14"
+          rebar3-version: "3.24.0"
+
+      - name: Prove exact immutable source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C supervisor rev-parse HEAD)" = "$BMSCL_SUPERVISOR_SHA"
+          test -z "$(git -C supervisor status --porcelain)"
+
+      - name: Compile, EUnit, and xref
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd supervisor
+          rebar3 compile
+          rebar3 eunit
+          rebar3 xref
