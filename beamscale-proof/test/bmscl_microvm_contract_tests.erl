@@ -45,6 +45,34 @@ operation_mismatch_is_rejected_test() ->
              Contract, register_connection, <<"tenant-a">>))
     end).
 
+one_time_verification_rejects_replay_test() ->
+    with_secret(fun() ->
+        {ok, Contract} =
+            bmscl_microvm_contract:issue(
+              invoke_async, <<"tenant-a">>, phoenix_target()),
+        ?assertMatch(
+           {ok, _},
+           bmscl_microvm_contract:verify_once(
+             Contract, invoke_async, <<"tenant-a">>)),
+        ?assertEqual(
+           {error, microvm_contract_replayed},
+           bmscl_microvm_contract:verify_once(
+             Contract, invoke_async, <<"tenant-a">>))
+    end).
+
+registry_restart_invalidates_outstanding_ticket_test() ->
+    with_secret(fun() ->
+        {ok, Contract} =
+            bmscl_microvm_contract:issue(
+              invoke_async, <<"tenant-a">>, phoenix_target()),
+        ok = gen_server:stop(bmscl_microvm_nonce_registry),
+        {ok, _} = bmscl_microvm_nonce_registry:start_link(),
+        ?assertEqual(
+           {error, microvm_nonce_epoch_mismatch},
+           bmscl_microvm_contract:verify_once(
+             Contract, invoke_async, <<"tenant-a">>))
+    end).
+
 tampering_is_rejected_test() ->
     with_secret(fun() ->
         {ok, Contract0} =
@@ -107,10 +135,30 @@ phoenix_target() ->
 
 with_secret(Fun) ->
     Previous = application:get_env(bmscl_supervisor, microvm_contract_secret),
+    StartedRegistry = ensure_nonce_registry(),
     application:set_env(bmscl_supervisor, microvm_contract_secret, ?SECRET),
     try Fun()
-    after restore(microvm_contract_secret, Previous)
+    after
+        restore(microvm_contract_secret, Previous),
+        stop_nonce_registry_if_started(StartedRegistry)
     end.
+
+ensure_nonce_registry() ->
+    case whereis(bmscl_microvm_nonce_registry) of
+        undefined ->
+            {ok, _} = bmscl_microvm_nonce_registry:start_link(),
+            true;
+        _ ->
+            false
+    end.
+
+stop_nonce_registry_if_started(true) ->
+    case whereis(bmscl_microvm_nonce_registry) of
+        undefined -> ok;
+        _ -> gen_server:stop(bmscl_microvm_nonce_registry)
+    end;
+stop_nonce_registry_if_started(false) ->
+    ok.
 
 restore(Key, undefined) -> application:unset_env(bmscl_supervisor, Key);
 restore(Key, {ok, Value}) -> application:set_env(bmscl_supervisor, Key, Value).
