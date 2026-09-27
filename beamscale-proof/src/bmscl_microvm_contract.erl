@@ -1,6 +1,6 @@
 -module(bmscl_microvm_contract).
 
--export([issue/3, verify/3, tenant_from_context/1]).
+-export([issue/3, verify/3, verify_once/3, tenant_from_context/1]).
 
 -define(VERSION, 1).
 -define(DEFAULT_TTL_SECONDS, 30).
@@ -17,10 +17,13 @@ issue(Operation, TenantId0, Target) when is_atom(Operation), is_map(Target) ->
             case valid_ttl(TTL) of
                 false -> {error, invalid_microvm_contract_ttl};
                 true ->
-                    case bmscl_execution_policy:authority(Target) of
-                        {error, Reason} ->
+                    case {bmscl_execution_policy:authority(Target),
+                          bmscl_microvm_nonce_registry:epoch()} of
+                        {{error, Reason}, _} ->
                             {error, Reason};
-                        {ok, Authority} ->
+                        {_, {error, Reason}} ->
+                            {error, Reason};
+                        {{ok, Authority}, {ok, NonceEpoch}} ->
                             Claims = #{
                                 version => ?VERSION,
                                 backend => firecracker,
@@ -33,7 +36,8 @@ issue(Operation, TenantId0, Target) when is_atom(Operation), is_map(Target) ->
                                 tenant_isolation => single_tenant_microvm,
                                 issued_at => Now,
                                 expires_at => Now + TTL,
-                                nonce => crypto:strong_rand_bytes(16)
+                                nonce => crypto:strong_rand_bytes(16),
+                                nonce_epoch => NonceEpoch
                             },
                             {ok, #{claims => Claims,
                                    signature => sign(Claims, Secret)}}
@@ -62,6 +66,21 @@ verify(Contract, ExpectedOperation, WorkerTenant0)
 verify(_, _, _) ->
     {error, malformed_microvm_contract}.
 
+-spec verify_once(map(), atom(), term()) -> {ok, map()} | {error, term()}.
+verify_once(Contract, ExpectedOperation, WorkerTenant) ->
+    case verify(Contract, ExpectedOperation, WorkerTenant) of
+        {error, _} = Error ->
+            Error;
+        {ok, Claims} ->
+            case bmscl_microvm_nonce_registry:consume(
+                   maps:get(nonce, Claims),
+                   maps:get(nonce_epoch, Claims),
+                   maps:get(expires_at, Claims)) of
+                ok -> {ok, Claims};
+                {error, _} = Error -> Error
+            end
+    end.
+
 tenant_from_context(Context) when is_map(Context) ->
     case maps:find(tenant_id, Context) of
         {ok, Tenant} -> normalize_tenant(Tenant);
@@ -85,21 +104,28 @@ verify_claims(Claims, Signature, Secret, ExpectedOperation, WorkerTenant) ->
                   maps:get(operation, Claims, undefined),
                   maps:get(tenant_id, Claims, undefined),
                   maps:get(issued_at, Claims, undefined),
-                  maps:get(expires_at, Claims, undefined)} of
+                  maps:get(expires_at, Claims, undefined),
+                  maps:get(nonce, Claims, undefined),
+                  maps:get(nonce_epoch, Claims, undefined)} of
                 {?VERSION, firecracker, ExpectedOperation, WorkerTenant,
-                 IssuedAt, ExpiresAt}
+                 IssuedAt, ExpiresAt, Nonce, NonceEpoch}
                   when is_integer(IssuedAt), is_integer(ExpiresAt),
+                       is_binary(Nonce), byte_size(Nonce) =:= 16,
+                       is_binary(NonceEpoch), byte_size(NonceEpoch) =:= 16,
                        ExpiresAt >= Now,
                        IssuedAt =< Now + 5,
                        ExpiresAt - IssuedAt =< ?MAX_TTL_SECONDS ->
                     {ok, Claims};
-                {?VERSION, firecracker, Operation, _Tenant, _IssuedAt, _ExpiresAt}
+                {?VERSION, firecracker, Operation, _Tenant, _IssuedAt, _ExpiresAt,
+                 _Nonce, _NonceEpoch}
                   when Operation =/= ExpectedOperation ->
                     {error, microvm_operation_mismatch};
-                {?VERSION, firecracker, _Operation, Tenant, _IssuedAt, _ExpiresAt}
+                {?VERSION, firecracker, _Operation, Tenant, _IssuedAt, _ExpiresAt,
+                 _Nonce, _NonceEpoch}
                   when Tenant =/= WorkerTenant ->
                     {error, microvm_tenant_mismatch};
-                {?VERSION, firecracker, _Operation, _Tenant, _IssuedAt, ExpiresAt}
+                {?VERSION, firecracker, _Operation, _Tenant, _IssuedAt, ExpiresAt,
+                 _Nonce, _NonceEpoch}
                   when is_integer(ExpiresAt), ExpiresAt < Now ->
                     {error, microvm_contract_expired};
                 _ ->
