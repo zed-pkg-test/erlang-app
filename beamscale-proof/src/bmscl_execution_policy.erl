@@ -28,7 +28,7 @@ admit_microvm(Target, Operation, WorkerTenant) ->
             case maps:find(microvm_contract, Target) of
                 error -> {error, microvm_contract_required};
                 {ok, Contract} ->
-                    bmscl_microvm_contract:verify(
+                    bmscl_microvm_contract:verify_once(
                       Contract, Operation, WorkerTenant)
             end
     end.
