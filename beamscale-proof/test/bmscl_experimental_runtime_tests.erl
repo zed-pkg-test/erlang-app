@@ -132,6 +132,7 @@ with_runtime(Profiles, Dispatcher, Fun) ->
                          bmscl_supervisor, experimental_faas_profiles),
     PreviousSecret = application:get_env(
                        bmscl_supervisor, microvm_contract_secret),
+    StartedRegistry = ensure_nonce_registry(),
     case Dispatcher of
         undefined ->
             application:unset_env(
@@ -148,8 +149,26 @@ with_runtime(Profiles, Dispatcher, Fun) ->
     after
         restore(experimental_runtime_dispatcher_module, PreviousDispatcher),
         restore(experimental_faas_profiles, PreviousProfiles),
-        restore(microvm_contract_secret, PreviousSecret)
+        restore(microvm_contract_secret, PreviousSecret),
+        stop_nonce_registry_if_started(StartedRegistry)
     end.
+
+ensure_nonce_registry() ->
+    case whereis(bmscl_microvm_nonce_registry) of
+        undefined ->
+            {ok, _} = bmscl_microvm_nonce_registry:start_link(),
+            true;
+        _ ->
+            false
+    end.
+
+stop_nonce_registry_if_started(true) ->
+    case whereis(bmscl_microvm_nonce_registry) of
+        undefined -> ok;
+        _ -> gen_server:stop(bmscl_microvm_nonce_registry)
+    end;
+stop_nonce_registry_if_started(false) ->
+    ok.
 
 restore(Key, {ok, Value}) ->
     application:set_env(bmscl_supervisor, Key, Value);
