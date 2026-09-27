@@ -1,0 +1,63 @@
+name: BeamScale supervisor PR 119 mirrored proof
+
+on:
+  pull_request:
+    paths:
+      - 'beamscale-proof/**'
+      - '.github/workflows/beamscale-supervisor-119-mirrored.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-blobs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          otp-version: '27.3'
+
+      - name: Verify exact product blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fx '# product_head=61a4d353e5388b5319334328e7122885a51a4e5a' beamscale-proof/SOURCE-GIT-BLOBS-PR119.txt
+          grep -v '^#' beamscale-proof/SOURCE-GIT-BLOBS-PR119.txt | while read -r expected path; do
+            [[ -n "${expected:-}" ]] || continue
+            test "$(git hash-object "$path")" = "$expected"
+          done
+
+      - name: Compile exact Erlang proof surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p beamscale-proof/ebin
+          erlc -Werror -o beamscale-proof/ebin beamscale-proof/src/*.erl
+          erlc -Werror -pa beamscale-proof/ebin -o beamscale-proof/ebin beamscale-proof/test/*.erl
+
+      - name: Run replay and execution-boundary EUnit
+        shell: bash
+        run: |
+          set -euo pipefail
+          erl -noshell -pa beamscale-proof/ebin -eval '
+            application:load({application, bmscl_supervisor,
+                              [{vsn, "proof"},
+                               {modules, []},
+                               {applications, [kernel, stdlib, crypto]},
+                               {env, []}]}),
+            {ok, _} = application:ensure_all_started(crypto),
+            ok = eunit:test(
+                   [bmscl_faas_profile_tests,
+                    bmscl_execution_boundary_tests,
+                    bmscl_execution_policy_tests,
+                    bmscl_microvm_nonce_registry_tests,
+                    bmscl_microvm_contract_tests,
+                    bmscl_experimental_runtime_tests],
+                   [verbose]),
+            halt(0).'
